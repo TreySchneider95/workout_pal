@@ -1,0 +1,33 @@
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      WORKOUT_DATA_DIR: /data
+      WORKOUT_SEED_PATH: /seed/home_gym_workout_with_images.zip
+      # Emailing AI plan prompts (optional). Set these in a .env file next to this one; see .env.example.
+      WORKOUT_APP_URL: ${WORKOUT_APP_URL:-}
+      WORKOUT_SMTP_HOST: ${WORKOUT_SMTP_HOST:-}
+      WORKOUT_SMTP_PORT: ${WORKOUT_SMTP_PORT:-587}
+      WORKOUT_SMTP_SECURITY: ${WORKOUT_SMTP_SECURITY:-starttls}
+      WORKOUT_SMTP_USERNAME: ${WORKOUT_SMTP_USERNAME:-}
+      WORKOUT_SMTP_PASSWORD: ${WORKOUT_SMTP_PASSWORD:-}
+      WORKOUT_SMTP_FROM: ${WORKOUT_SMTP_FROM:-}
+    volumes:
+      # SQLite database, exercise images and backups live here on the host.
+      - ./data:/data
+      # Seed files (exercise library CSV + plan ZIP), read-only.
+      - ./seed:/seed:ro
+    ports:
+      # Direct API access from this computer only (docs are also served through the app at /api/docs).
+      - "127.0.0.1:${API_PORT:-8001}:8000"
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      # Reachable from other devices on your network (your phone) at http://<this-computer>:8080
+      - "${APP_PORT:-8080}:80"
