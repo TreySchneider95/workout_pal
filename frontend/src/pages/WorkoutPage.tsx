@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Flag, ListOrdered, MoreHorizontal, Plus, Timer, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Flag, ListOrdered, MoreHorizontal, Plus, RotateCcw, Timer, Trash2 } from "lucide-react";
 import * as React from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
@@ -22,6 +22,7 @@ import { clock } from "@/lib/format";
 import { queryClient } from "@/lib/queryClient";
 import type { SessionExercise, SetPatch } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { nextExerciseIndex } from "@/lib/workoutFlow";
 
 function Elapsed({ since }: { since: string }) {
   const [now, setNow] = React.useState(Date.now());
@@ -107,7 +108,11 @@ export default function WorkoutPage() {
   const allSets = exercises.filter((e) => e.status !== "skipped").flatMap((e) => e.sets);
   const doneSets = allSets.filter((s) => s.completed).length;
   const progress = allSets.length ? (doneSets / allSets.length) * 100 : 0;
-  const isLast = index >= exercises.length - 1;
+  const currentIndex = current ? exercises.indexOf(current) : 0;
+  // Next skips finished exercises and wraps to the top, so you can do one set of
+  // each exercise per round. Nothing left elsewhere → offer Finish instead.
+  const nextIndex = nextExerciseIndex(exercises, currentIndex);
+  const nextIsNewRound = nextIndex !== null && nextIndex < currentIndex;
 
   const onSetChange = (se: SessionExercise, setId: number, patch: SetPatch) => {
     editor.changeSet(setId, patch);
@@ -247,15 +252,28 @@ export default function WorkoutPage() {
         )}
 
         <div className="mt-4 grid grid-cols-2 gap-3">
-          <Button variant="secondary" size="lg" disabled={index === 0} onClick={() => goTo(index - 1)}>
+          <Button variant="secondary" size="lg" disabled={currentIndex === 0} onClick={() => goTo(currentIndex - 1)}>
             <ChevronLeft /> Previous
           </Button>
-          {isLast ? (
+          {nextIndex === null ? (
             <Button size="lg" onClick={() => setFinishOpen(true)}>
               <Flag /> Finish
             </Button>
+          ) : nextIsNewRound ? (
+            <Button
+              size="lg"
+              variant={current && exerciseState(current) !== "todo" ? "default" : "secondary"}
+              onClick={() => goTo(nextIndex)}
+              aria-label={`Next round: back to exercise ${nextIndex + 1}, ${exercises[nextIndex].exercise_name}`}
+            >
+              <RotateCcw /> Back to #{nextIndex + 1}
+            </Button>
           ) : (
-            <Button size="lg" variant={current && exerciseState(current) === "done" ? "default" : "secondary"} onClick={() => goTo(index + 1)}>
+            <Button
+              size="lg"
+              variant={current && exerciseState(current) !== "todo" ? "default" : "secondary"}
+              onClick={() => goTo(nextIndex)}
+            >
               Next <ChevronRight />
             </Button>
           )}

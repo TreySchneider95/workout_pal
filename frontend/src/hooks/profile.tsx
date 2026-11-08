@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/misc";
 import { resetRestTimer } from "@/hooks/restTimer";
 import { api } from "@/lib/api";
+import { IDLE_SIGN_OUT_MS, isIdle, lastActive, markActive } from "@/lib/idle";
 import { getProfileId, storeProfileId } from "@/lib/profile";
 import { queryClient } from "@/lib/queryClient";
 import type { Profile } from "@/lib/types";
@@ -67,10 +68,54 @@ function ProfilePicker({ profiles, onPick }: { profiles: Profile[]; onPick: (id:
   );
 }
 
+const ACTIVITY_EVENTS = ["pointerdown", "keydown", "wheel"] as const;
+const CHECK_EVERY_MS = 30_000;
+/** Touches are frequent mid-workout; only record one every few seconds. */
+const RECORD_EVERY_MS = 10_000;
+
+/** Calls `onIdle` once nobody has touched the screen for IDLE_SIGN_OUT_MS. */
+function useIdleSignOut(enabled: boolean, onIdle: () => void) {
+  const onIdleRef = React.useRef(onIdle);
+  React.useEffect(() => {
+    onIdleRef.current = onIdle;
+  }, [onIdle]);
+
+  React.useEffect(() => {
+    if (!enabled) return;
+    let last = Date.now();
+    markActive(last);
+    const onActivity = () => {
+      const now = Date.now();
+      if (now - last < RECORD_EVERY_MS) return;
+      last = now;
+      markActive(now);
+    };
+    const check = () => {
+      // Interval timers pause while the screen sleeps, so compare clock times.
+      const seen = Math.max(last, lastActive() ?? 0);
+      if (Date.now() - seen >= IDLE_SIGN_OUT_MS) onIdleRef.current();
+    };
+    ACTIVITY_EVENTS.forEach((e) => window.addEventListener(e, onActivity, { capture: true, passive: true }));
+    document.addEventListener("visibilitychange", check);
+    const id = window.setInterval(check, CHECK_EVERY_MS);
+    return () => {
+      ACTIVITY_EVENTS.forEach((e) => window.removeEventListener(e, onActivity, { capture: true }));
+      document.removeEventListener("visibilitychange", check);
+      window.clearInterval(id);
+    };
+  }, [enabled]);
+}
+
+/** The stored profile, unless the device sat unused long enough to sign out (e.g. it was off). */
+function initialProfileId(): number | null {
+  if (getProfileId() !== null && isIdle()) storeProfileId(null);
+  return getProfileId();
+}
+
 /** Asks who is using the device, then renders the app for that person. */
 export function ProfileGate({ children }: { children: React.ReactNode }) {
   const profiles = useQuery({ queryKey: ["profiles"], queryFn: api.profiles, staleTime: Infinity });
-  const [profileId, setProfileId] = React.useState(getProfileId);
+  const [profileId, setProfileId] = React.useState(initialProfileId);
   const navigate = useNavigate();
 
   const switchProfile = React.useCallback(
@@ -88,6 +133,17 @@ export function ProfileGate({ children }: { children: React.ReactNode }) {
     },
     [profileId, navigate],
   );
+
+  /** Back to "Who's training?". An in-progress workout stays open to resume from Today. */
+  const signOut = React.useCallback(() => {
+    storeProfileId(null);
+    resetRestTimer();
+    queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "profiles" });
+    navigate("/");
+    setProfileId(null);
+  }, [navigate]);
+
+  useIdleSignOut(profileId !== null, signOut);
 
   if (profiles.isLoading) {
     return (
