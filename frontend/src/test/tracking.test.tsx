@@ -123,6 +123,20 @@ describe("ExerciseTracker", () => {
     onNotesSave: vi.fn(),
   });
 
+  it("offers a timer on every exercise, sized for it, and only starts it when tapped", async () => {
+    const onStartTimer = vi.fn();
+    const h = { ...handlers(), onStartTimer };
+    render(
+      <MemoryRouter>
+        <ExerciseTracker exercise={exercise({ rest_seconds: 0 })} {...h} />
+      </MemoryRouter>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Mark set 1 complete" }));
+    expect(onStartTimer).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Start a 1:00 timer" }));
+    expect(onStartTimer).toHaveBeenCalledTimes(1);
+  });
+
   it("shows targets, last performance and the weight convention", () => {
     render(
       <MemoryRouter>

@@ -4,7 +4,7 @@ import { useRestTimer } from "@/hooks/restTimer";
 import { clock } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-/** Floating, non-blocking rest countdown. */
+/** Floating, non-blocking countdown, started from an exercise's Timer button. */
 export function RestTimerBar() {
   const timer = useRestTimer();
   if (!timer.state) return null;
@@ -31,7 +31,7 @@ export function RestTimerBar() {
         )}
         <div className="min-w-0 flex-1">
           <div className={cn("truncate text-xs font-medium uppercase tracking-wide", finished ? "text-primary-foreground/80" : "text-muted-foreground")}>
-            {finished ? "Rest over" : paused ? "Paused" : state.label}
+            {finished ? "Time's up" : paused ? "Paused" : state.label}
           </div>
           <div className="tabular text-3xl font-bold leading-none tracking-tight">{finished ? "Go!" : clock(remaining)}</div>
         </div>
@@ -66,7 +66,7 @@ export function RestTimerBar() {
             finished ? "bg-primary-foreground/10" : "hover:bg-muted",
           )}
           onClick={timer.stop}
-          aria-label={finished ? "Dismiss" : "Skip rest"}
+          aria-label={finished ? "Dismiss" : "Stop timer"}
         >
           <X className="size-5" />
         </button>

@@ -117,15 +117,16 @@ and use it as `WORKOUT_SMTP_PASSWORD`. Each person adds their own address in **S
 
 ## Using the app
 
-**Profiles**: the app is shared by Trey and Abby. Each phone asks *Who's training?* once and remembers the answer; switch from the avatar on *Today* (or the bottom of the sidebar on desktop). Each person has their own weekly plan, workout history, weight suggestions, stats and settings. The exercise library and equipment are shared. Abby starts with no plan: build one from *Plan*, or log empty workouts.
+**Profiles**: the app is shared by Trey and Abby. Each phone asks *Who's training?* once and remembers the answer; switch from the avatar on *Today* (or the bottom of the sidebar on desktop). After an hour without a touch the app goes back to *Who's training?* (an unfinished workout can be resumed from *Today*). Each person has their own weekly plan, workout history, weight suggestions, stats and settings. The exercise library and equipment are shared. Abby starts with no plan: build one from *Plan*, or log empty workouts.
 
 **Today**: today's workout from your weekly plan, with estimated time and sets. On rest days you can still pick any workout, or an empty one. *Do a different workout* runs another day's workout without changing the schedule.
 
 **Workout screen**:
 - One exercise at a time, with the numbered dots at the top to jump around. Tap the image to see the full demonstration.
+- Work in rounds if you like: *Next* goes to the next exercise that still has a set left and wraps back to the top (*Back to #1*), so you can do one set of everything, then go round again. Exercises with extra sets get visited until they're done; doing all sets of one exercise first works too.
 - Each card shows the target, rest time, the **weight convention** (e.g. *lb per dumbbell*, *lb plates · 2:1 pulley*, *lb added plates · bar not incl.*), and **what you did last time** for that exact exercise.
 - Sets are prefilled with last time's weight and reps (or the plan's starting weight the first time). Use −/+ (dumbbells step through *your* available weights) or tap the number to type.
-- Tap ✓ when a set is done. The rest timer starts automatically; it floats above the page and never blocks it. Use +15/−15, pause or skip.
+- Tap ✓ when a set is done. Need a timer? Tap **Timer** under the sets: it counts down the exercise's duration (cardio, planks; whatever the next set is set to), or its rest time for lifts. It floats above the page and never blocks it. Use +15/−15, pause or stop.
 - Per-side exercises get separate **L** and **R** rows. Timed holds have a built-in stopwatch. Cardio records minutes, miles and mph.
 - **Every tap is saved immediately.** If the connection drops, changes are kept on the phone and sent when it's back (“Offline · kept on device”). A refresh or closed tab picks up exactly where you were.
 - *Finish* asks for optional notes and saves the session to history.
@@ -147,7 +148,7 @@ and use it as `WORKOUT_SMTP_PASSWORD`. Each person adds their own address in **S
 
 **Stats**: workouts this week, totals, consistency (planned days completed over 8 weeks), a 12-week calendar, workouts and training volume per week, per-exercise progress, and recent personal bests.
 
-**Settings**: program start date (week 1 starts there; it's set automatically on your first workout), ramp-in weeks, rest timer behaviour, the suggestion threshold, and **your equipment**. Set the dumbbell weights you actually own, and the smallest plate jump for the cable stacks and Smith machine.
+**Settings**: program start date (week 1 starts there; it's set automatically on your first workout), ramp-in weeks, timer sound, the suggestion threshold, and **your equipment**. Set the dumbbell weights you actually own, and the smallest plate jump for the cable stacks and Smith machine.
 
 ### Weight conventions
 

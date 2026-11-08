@@ -9,7 +9,7 @@ import { IDLE_SIGN_OUT_MS, isIdle, markActive } from "@/lib/idle";
 import { getProfileId, storeProfileId } from "@/lib/profile";
 import { queryClient } from "@/lib/queryClient";
 import type { Profile, SessionExercise } from "@/lib/types";
-import { nextExerciseIndex } from "@/lib/workoutFlow";
+import { nextExerciseIndex, timerSecondsFor } from "@/lib/workoutFlow";
 
 type Ex = Pick<SessionExercise, "status" | "sets">;
 
@@ -66,6 +66,25 @@ describe("nextExerciseIndex", () => {
     expect(nextExerciseIndex([ex(2, 2), ex(2, 1)], 1)).toBeNull();
     expect(nextExerciseIndex([ex(2)], 0)).toBeNull();
     expect(nextExerciseIndex([], 0)).toBeNull();
+  });
+});
+
+describe("timerSecondsFor", () => {
+  const timed = (durations: (number | null)[], done = 0) => ({
+    target_duration_min: 45,
+    rest_seconds: 90,
+    sets: ex(durations.length, done).sets.map((s, i) => ({ ...s, duration_seconds: durations[i] })),
+  });
+
+  it("uses the next set's duration, as adjusted on screen", () => {
+    expect(timerSecondsFor(timed([60, 50], 1))).toBe(50);
+    expect(timerSecondsFor({ ...timed([1200]), target_duration_min: 1200 })).toBe(1200);
+  });
+
+  it("falls back to the planned duration, then rest time, then a minute", () => {
+    expect(timerSecondsFor(timed([null]))).toBe(45);
+    expect(timerSecondsFor({ ...ex(3), target_duration_min: null, rest_seconds: 90 })).toBe(90);
+    expect(timerSecondsFor({ ...ex(3), target_duration_min: null, rest_seconds: 0 })).toBe(60);
   });
 });
 

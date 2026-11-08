@@ -22,3 +22,19 @@ export function nextExerciseIndex(exercises: Pick<SessionExercise, "status" | "s
   }
   return null;
 }
+
+const DEFAULT_TIMER_SECONDS = 60;
+
+/**
+ * How long the on-demand timer runs for the exercise on screen: the duration of
+ * the next set to do (cardio, planks...; it may have been adjusted), else the
+ * planned duration, else the exercise's rest time, else a minute.
+ */
+export function timerSecondsFor(
+  e: Pick<SessionExercise, "sets" | "target_duration_min" | "rest_seconds">,
+): number {
+  const next = e.sets.find((s) => !s.completed) ?? e.sets[e.sets.length - 1];
+  const duration = next?.duration_seconds || e.target_duration_min;
+  if (duration && duration > 0) return duration;
+  return e.rest_seconds > 0 ? e.rest_seconds : DEFAULT_TIMER_SECONDS;
+}

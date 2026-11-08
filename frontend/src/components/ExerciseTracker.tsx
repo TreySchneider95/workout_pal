@@ -7,9 +7,10 @@ import { SetRow, setLabel } from "@/components/SetRow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
-import { dateShort, lb, loadLabel, restText, targetText } from "@/lib/format";
+import { clock, dateShort, lb, loadLabel, restText, targetText } from "@/lib/format";
 import type { SessionExercise, SetPatch } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { timerSecondsFor } from "@/lib/workoutFlow";
 
 interface Props {
   exercise: SessionExercise;
@@ -19,7 +20,8 @@ interface Props {
   onApplyWeight?: (weight: number) => void;
   onToggleSkip?: () => void;
   onNotesSave: (notes: string) => void;
-  onStartRest?: () => void;
+  /** Start a countdown sized for this exercise (see timerSecondsFor). */
+  onStartTimer?: () => void;
   busy?: boolean;
 }
 
@@ -66,7 +68,7 @@ export function ExerciseTracker({
   onApplyWeight,
   onToggleSkip,
   onNotesSave,
-  onStartRest,
+  onStartTimer,
   busy,
 }: Props) {
   const [showNotes, setShowNotes] = React.useState(!!exercise.notes);
@@ -182,9 +184,9 @@ export function ExerciseTracker({
             </Button>
           </>
         )}
-        {!skipped && onStartRest && exercise.rest_seconds > 0 && (
-          <Button variant="ghost" size="sm" onClick={onStartRest}>
-            <Timer /> Rest
+        {!skipped && onStartTimer && (
+          <Button variant="ghost" size="sm" onClick={onStartTimer} aria-label={`Start a ${clock(timerSecondsFor(exercise))} timer`}>
+            <Timer /> Timer <span className="tabular text-muted-foreground">{clock(timerSecondsFor(exercise))}</span>
           </Button>
         )}
         <div className="ml-auto flex gap-1">

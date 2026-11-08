@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Flag, ListOrdered, MoreHorizontal, Plus, RotateCcw, Timer, Trash2 } from "lucide-react";
 import * as React from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
@@ -20,9 +19,9 @@ import { api } from "@/lib/api";
 import { saveQueue } from "@/lib/autosave";
 import { clock } from "@/lib/format";
 import { queryClient } from "@/lib/queryClient";
-import type { SessionExercise, SetPatch } from "@/lib/types";
+import type { SessionExercise } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { nextExerciseIndex } from "@/lib/workoutFlow";
+import { nextExerciseIndex, timerSecondsFor } from "@/lib/workoutFlow";
 
 function Elapsed({ since }: { since: string }) {
   const [now, setNow] = React.useState(Date.now());
@@ -49,7 +48,6 @@ export default function WorkoutPage() {
   const editor = useSessionEditor(id);
   const { session } = editor;
   const timer = useRestTimer();
-  const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
 
   const [index, setIndex] = React.useState(() => {
     try {
@@ -114,14 +112,8 @@ export default function WorkoutPage() {
   const nextIndex = nextExerciseIndex(exercises, currentIndex);
   const nextIsNewRound = nextIndex !== null && nextIndex < currentIndex;
 
-  const onSetChange = (se: SessionExercise, setId: number, patch: SetPatch) => {
-    editor.changeSet(setId, patch);
-    if (patch.completed && settings.data?.rest_timer_auto_start !== false && se.rest_seconds > 0) {
-      const target = se.sets.find((s) => s.id === setId);
-      const siblingsDone = se.sets.filter((s) => target && s.set_number === target.set_number && s.id !== setId).every((s) => s.completed);
-      if (siblingsDone) timer.start(se.rest_seconds, `Rest · ${se.exercise_name}`);
-    }
-  };
+  // Timers are on demand only (the Timer button), sized for the exercise on screen.
+  const startTimer = (se: SessionExercise) => timer.start(timerSecondsFor(se), se.exercise_name);
 
   const finish = async () => {
     setFinishing(true);
@@ -179,9 +171,9 @@ export default function WorkoutPage() {
               <DropdownMenuItem onSelect={() => setPickerOpen(true)}>
                 <Plus /> Add an exercise
               </DropdownMenuItem>
-              {current && current.rest_seconds > 0 && (
-                <DropdownMenuItem onSelect={() => timer.start(current.rest_seconds, `Rest · ${current.exercise_name}`)}>
-                  <Timer /> Start rest timer
+              {current && current.status !== "skipped" && (
+                <DropdownMenuItem onSelect={() => startTimer(current)}>
+                  <Timer /> Start timer
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
@@ -234,13 +226,13 @@ export default function WorkoutPage() {
             key={current.id}
             exercise={current}
             busy={editor.busy}
-            onSetChange={(setId, patch) => onSetChange(current, setId, patch)}
+            onSetChange={(setId, patch) => editor.changeSet(setId, patch)}
             onAddSet={() => editor.addSet(current)}
             onRemoveLastSet={() => editor.removeLastSet(current)}
             onApplyWeight={(w) => editor.applyWeight(current, w)}
             onToggleSkip={() => editor.toggleSkip(current)}
             onNotesSave={(n) => editor.saveNotes(current, n)}
-            onStartRest={() => timer.start(current.rest_seconds, `Rest · ${current.exercise_name}`)}
+            onStartTimer={() => startTimer(current)}
           />
         ) : (
           <div className="rounded-3xl border border-dashed border-border p-10 text-center text-muted-foreground">

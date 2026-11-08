@@ -189,13 +189,10 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Rest timer</CardTitle>
+          <CardTitle>Timer</CardTitle>
         </CardHeader>
         <CardContent className="divide-y divide-border">
-          <Row title="Start automatically" description="After you tick off a set">
-            <Switch checked={s.rest_timer_auto_start} onCheckedChange={(v) => update.mutate({ rest_timer_auto_start: v })} />
-          </Row>
-          <Row title="Sound" description="Chime when rest is over (vibrates too, where supported)">
+          <Row title="Sound" description="Chime when the timer ends (vibrates too, where supported)">
             <Switch checked={s.rest_timer_sound} onCheckedChange={(v) => update.mutate({ rest_timer_sound: v })} />
           </Row>
         </CardContent>
