@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { EmptyState } from "@/components/AppShell";
 import { ExerciseImage } from "@/components/ExerciseImage";
+import { PastePicture } from "@/components/PastePicture";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -73,11 +74,19 @@ function PictureRow({ item }: { item: ImagePromptItem }) {
         </div>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <Button size="sm" onClick={() => void copy()}>
+        <Button size="sm" className="col-span-full" onClick={() => void copy()}>
           {copied ? <Check /> : <Copy />} {copied ? "Copied" : "Copy prompt"}
         </Button>
+        <PastePicture
+          size="sm"
+          variant="secondary"
+          name={ex.id.toLowerCase()}
+          label={upload.isPending ? "Uploading…" : "Paste picture"}
+          disabled={upload.isPending}
+          onPicture={(file) => upload.mutate(file)}
+        />
         <Button size="sm" variant="secondary" disabled={upload.isPending} onClick={() => fileInput.current?.click()}>
-          <ImageUp /> {upload.isPending ? "Uploading…" : item.has_image ? "Replace picture" : "Upload picture"}
+          <ImageUp /> Upload file
         </Button>
         <input
           ref={fileInput}
@@ -121,7 +130,7 @@ export default function ExercisePicturesPage() {
         <h1 className="text-[28px] font-bold leading-tight tracking-tight lg:text-3xl">Exercise pictures</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
           Make a how-to picture for each exercise in your plan that doesn't have one, in the same style as the others. Copy a prompt into an AI that
-          makes images (ChatGPT or Gemini, for example), save the picture it makes, then upload it here.{" "}
+          makes images (ChatGPT or Gemini, for example), then copy the picture it makes and paste it here (or save it and upload the file).{" "}
           <span className="font-medium text-foreground">One exercise per prompt</span>: most AIs only make a few pictures a day. Pictures are shared
           by everyone using the app.
         </p>

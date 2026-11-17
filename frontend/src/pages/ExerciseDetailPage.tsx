@@ -8,6 +8,7 @@ import { StatTile } from "@/components/AppShell";
 import { BarTrend, LineTrend } from "@/components/Charts";
 import { ExerciseForm } from "@/components/ExerciseForm";
 import { ExerciseImage } from "@/components/ExerciseImage";
+import { PastePicture } from "@/components/PastePicture";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -128,9 +129,12 @@ export default function ExerciseDetailPage() {
               e.target.value = "";
             }}
           />
-          <Button variant="ghost" size="sm" onClick={() => fileRef.current?.click()} disabled={upload.isPending}>
-            <ImagePlus /> {ex.image_url ? "Replace image" : "Add image"}
-          </Button>
+          <div className="flex flex-wrap gap-1">
+            <Button variant="ghost" size="sm" onClick={() => fileRef.current?.click()} disabled={upload.isPending}>
+              <ImagePlus /> {ex.image_url ? "Replace image" : "Add image"}
+            </Button>
+            <PastePicture variant="ghost" size="sm" name={ex.id.toLowerCase()} disabled={upload.isPending} onPicture={(file) => upload.mutate(file)} />
+          </div>
           <Card className="px-4 py-1">
             <Detail label="Equipment" value={ex.equipment_detail ?? ex.equipment_name ?? "–"} />
             {ex.attachment && <Detail label="Attachment" value={ex.attachment} />}
