@@ -38,6 +38,8 @@ export interface PlanDiffWorkout {
   name: string;
   day: string | null;
   previous_day: string | null;
+  weeks: number[] | null;
+  weeks_text: string;
   status: ChangeStatus;
   notes: string[];
   exercises: PlanDiffExercise[];
@@ -46,6 +48,8 @@ export interface PlanDiffWorkout {
 export interface PlanPreview {
   ok: boolean;
   summary: string | null;
+  plan_weeks: number | null;
+  previous_plan_weeks: number;
   errors: string[];
   warnings: string[];
   workouts: PlanDiffWorkout[];
@@ -151,6 +155,9 @@ export interface Template {
   name: string;
   weekday: number | null;
   weekday_name: string | null;
+  /** Plan weeks this workout runs in; null = every week. */
+  weeks: number[] | null;
+  weeks_text: string;
   estimated_duration_minutes: number;
   estimated_duration_override: number | null;
   notes: string | null;
@@ -281,6 +288,8 @@ export interface TemplateChoice {
   name: string;
   weekday: number | null;
   weekday_name: string | null;
+  weeks: number[] | null;
+  weeks_text: string;
   exercise_count: number;
   estimated_duration_minutes: number;
 }
@@ -290,6 +299,9 @@ export interface Dashboard {
   weekday: number;
   weekday_name: string;
   program_week: number | null;
+  /** Week of the repeating plan, 1..plan_weeks. */
+  plan_week: number;
+  plan_weeks: number;
   today: Template | null;
   active_session: SessionSummary | null;
   last_session: SessionSummary | null;
@@ -305,6 +317,7 @@ export interface HistoryPage {
 export interface AppSettings {
   program_start_date: string | null;
   ramp_weeks: number;
+  plan_weeks: number;
   rest_timer_auto_start: boolean;
   rest_timer_sound: boolean;
   progression_drop_threshold: number;

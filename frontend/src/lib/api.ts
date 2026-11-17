@@ -80,8 +80,8 @@ export const api = {
     request<{ sent_to: string }>(`/api/plan-assistant/email?date=${localDate()}`, { method: "POST", body: json({ request: text }) }),
   previewPlan: (document: string) =>
     request<PlanPreview>("/api/plan-assistant/preview", { method: "POST", body: json({ document }) }),
-  applyPlan: (document: string) =>
-    request<PlanRevision>("/api/plan-assistant/apply", { method: "POST", body: json({ document }) }),
+  applyPlan: (document: string, restart = false) =>
+    request<PlanRevision>(`/api/plan-assistant/apply?date=${localDate()}`, { method: "POST", body: json({ document, restart }) }),
   planRevisions: () => request<PlanRevision[]>("/api/plan-assistant/revisions"),
   undoPlanRevision: (id: number) => request<PlanRevision>(`/api/plan-assistant/revisions/${id}/undo`, { method: "POST" }),
 
@@ -116,11 +116,18 @@ export const api = {
 
   templates: () => request<Template[]>(`/api/workout-templates?date=${localDate()}`),
   template: (id: number) => request<Template>(`/api/workout-templates/${id}?date=${localDate()}`),
-  createTemplate: (body: { name: string; weekday?: number | null; copy_from_template_id?: number }) =>
+  createTemplate: (body: { name: string; weekday?: number | null; weeks?: number[] | null; copy_from_template_id?: number }) =>
     request<Template>("/api/workout-templates", { method: "POST", body: json(body) }),
   updateTemplate: (
     id: number,
-    body: { name?: string; weekday?: number; unschedule?: boolean; notes?: string | null; estimated_duration_minutes?: number | null },
+    body: {
+      name?: string;
+      weekday?: number;
+      unschedule?: boolean;
+      weeks?: number[] | null;
+      notes?: string | null;
+      estimated_duration_minutes?: number | null;
+    },
   ) => request<Template>(`/api/workout-templates/${id}`, { method: "PATCH", body: json(body) }),
   deleteTemplate: (id: number) => request<void>(`/api/workout-templates/${id}`, { method: "DELETE" }),
   addTemplateExercise: (id: number, body: TemplateExerciseInput & { exercise_id: string }) =>

@@ -13,6 +13,9 @@ Speed = Annotated[float, Field(ge=0, le=25)]
 SetCount = Annotated[int, Field(ge=1, le=20)]
 RestSeconds = Annotated[int, Field(ge=0, le=900)]
 PulleyRatio = Annotated[str, Field(pattern=r"^\d+:\d+$")]
+PlanWeek = Annotated[int, Field(ge=1, le=12)]
+# Plan weeks a workout runs in; null = every week.
+PlanWeeks = Annotated[list[PlanWeek], Field(min_length=1, max_length=12)]
 
 
 class ORM(BaseModel):
@@ -196,6 +199,8 @@ class TemplateOut(BaseModel):
     name: str
     weekday: int | None
     weekday_name: str | None
+    weeks: list[int] | None
+    weeks_text: str
     estimated_duration_minutes: int
     estimated_duration_override: int | None
     notes: str | None
@@ -206,6 +211,7 @@ class TemplateOut(BaseModel):
 class TemplateCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     weekday: Annotated[int, Field(ge=0, le=6)] | None = None
+    weeks: PlanWeeks | None = None
     notes: str | None = None
     copy_from_template_id: int | None = None
 
@@ -214,6 +220,7 @@ class TemplateUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=100)
     weekday: Annotated[int, Field(ge=0, le=6)] | None = None
     unschedule: bool = False  # set True to remove the template from the week
+    weeks: PlanWeeks | None = None  # sending null makes it run every week
     estimated_duration_minutes: Annotated[int, Field(ge=0, le=600)] | None = None
     notes: str | None = None
 
@@ -426,6 +433,8 @@ class TemplateChoice(BaseModel):
     name: str
     weekday: int | None
     weekday_name: str | None
+    weeks: list[int] | None
+    weeks_text: str
     exercise_count: int
     estimated_duration_minutes: int
 
@@ -435,6 +444,8 @@ class Dashboard(BaseModel):
     weekday: int
     weekday_name: str
     program_week: int | None
+    plan_week: int  # week of the repeating plan, 1..plan_weeks
+    plan_weeks: int
     today: TemplateOut | None
     active_session: SessionSummary | None
     last_session: SessionSummary | None
@@ -445,6 +456,7 @@ class Dashboard(BaseModel):
 class AppSettingsOut(ORM):
     program_start_date: date | None
     ramp_weeks: int
+    plan_weeks: int
     rest_timer_auto_start: bool
     rest_timer_sound: bool
     progression_drop_threshold: int
@@ -454,6 +466,7 @@ class AppSettingsUpdate(BaseModel):
     program_start_date: date | None = None
     clear_program_start_date: bool = False
     ramp_weeks: Annotated[int, Field(ge=0, le=12)] | None = None
+    plan_weeks: PlanWeek | None = None
     rest_timer_auto_start: bool | None = None
     rest_timer_sound: bool | None = None
     progression_drop_threshold: Annotated[int, Field(ge=1, le=10)] | None = None
@@ -523,6 +536,11 @@ class PlanDocumentIn(BaseModel):
     document: str = Field(min_length=1, max_length=500_000)
 
 
+class PlanApplyIn(PlanDocumentIn):
+    # Make the current week week 1 of the new plan (program start date = this week).
+    restart: bool = False
+
+
 class PlanDiffExercise(BaseModel):
     exercise_id: str
     exercise_name: str
@@ -537,6 +555,8 @@ class PlanDiffWorkout(BaseModel):
     name: str
     day: str | None
     previous_day: str | None
+    weeks: list[int] | None
+    weeks_text: str
     status: str  # added | removed | changed | unchanged
     notes: list[str]
     exercises: list[PlanDiffExercise]
@@ -545,6 +565,8 @@ class PlanDiffWorkout(BaseModel):
 class PlanPreview(BaseModel):
     ok: bool
     summary: str | None
+    plan_weeks: int | None
+    previous_plan_weeks: int
     errors: list[str]
     warnings: list[str]
     workouts: list[PlanDiffWorkout]

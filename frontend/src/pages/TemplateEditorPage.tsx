@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ExerciseImage } from "@/components/ExerciseImage";
 import { ExercisePicker } from "@/components/ExercisePicker";
 import { Stepper } from "@/components/Stepper";
+import { WeekPicker } from "@/components/WeekPicker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -18,6 +19,7 @@ import { Skeleton } from "@/components/ui/misc";
 import { Switch } from "@/components/ui/switch";
 import { ApiError, api } from "@/lib/api";
 import { WEEKDAYS, isWeighted, lb, loadLabel, minutesText, restText, targetText } from "@/lib/format";
+import { weeksOverlap } from "@/lib/planWeeks";
 import { queryClient } from "@/lib/queryClient";
 import type { Template, TemplateExercise, TemplateExerciseInput } from "@/lib/types";
 
@@ -269,20 +271,24 @@ export default function TemplateEditorPage() {
     [ids[index], ids[j]] = [ids[j], ids[index]];
     mutate.mutate(() => api.reorderTemplate(t.id, ids));
   };
-  const occupantOf = (day: number) => all.data?.find((x) => x.weekday === day && x.id !== t.id);
+  const planWeeks = settings.data?.plan_weeks ?? 1;
+  // Workouts on `day` in any of this workout's weeks; they swap places when it moves there.
+  const occupantsOf = (day: number) => (all.data ?? []).filter((x) => x.weekday === day && x.id !== t.id && weeksOverlap(x.weeks, t.weeks));
+  const names = (list: Template[]) => list.map((x) => x.name).join(" & ");
 
   return (
     <div>
       <header className="pb-4 pt-4 lg:pt-10">
         <Button asChild variant="ghost" size="sm" className="-ml-3 text-muted-foreground">
           <Link to="/schedule">
-            <ChevronLeft /> Weekly plan
+            <ChevronLeft /> Plan
           </Link>
         </Button>
         <div className="mt-1 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-[28px] font-bold leading-tight tracking-tight">{t.name}</h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
+              {planWeeks > 1 && `${t.weeks_text} · `}
               {t.exercise_count} exercises · ~{minutesText(t.estimated_duration_minutes)}
             </p>
           </div>
@@ -310,16 +316,16 @@ export default function TemplateEditorPage() {
             value={t.weekday ?? ""}
             onChange={(e) => {
               const v = e.target.value;
-              const occupant = v === "" ? undefined : occupantOf(Number(v));
+              const occupants = v === "" ? [] : occupantsOf(Number(v));
               mutate.mutate(() => api.updateTemplate(t.id, v === "" ? { unschedule: true } : { weekday: Number(v) }));
-              if (occupant) toast.info(`${occupant.name} moved to ${t.weekday !== null ? WEEKDAYS[t.weekday] : "unscheduled"}`);
+              if (occupants.length) toast.info(`${names(occupants)} moved to ${t.weekday !== null ? WEEKDAYS[t.weekday] : "unscheduled"}`);
             }}
           >
             <option value="">Not scheduled</option>
             {WEEKDAYS.map((d, i) => (
               <option key={d} value={i}>
-                Every {d}
-                {occupantOf(i) ? ` (swap with ${occupantOf(i)!.name})` : ""}
+                {t.weeks ? d : `Every ${d}`}
+                {occupantsOf(i).length ? ` (swap with ${names(occupantsOf(i))})` : ""}
               </option>
             ))}
           </Select>
@@ -327,6 +333,17 @@ export default function TemplateEditorPage() {
             <Play /> Start this workout
           </Button>
         </div>
+        {planWeeks > 1 && (
+          <div className="mt-3">
+            <div className="mb-1.5 text-sm font-medium text-muted-foreground">Runs in weeks</div>
+            <WeekPicker
+              planWeeks={planWeeks}
+              value={t.weeks}
+              disabled={mutate.isPending}
+              onChange={(weeks) => mutate.mutate(() => api.updateTemplate(t.id, { weeks }))}
+            />
+          </div>
+        )}
       </header>
 
       <div className="space-y-2.5">

@@ -37,7 +37,7 @@ def test_prompt_has_request_plan_library_and_format(client: TestClient) -> None:
     assert "EX0300 | Chest; Triceps dip" in prompt  # library exercise not in the plan
     assert "lb per dumbbell" in prompt
     assert "pairs of 5, 10, 15" in prompt  # the dumbbells that exist
-    assert "workout-pal-plan/v1" in prompt
+    assert "workout-pal-plan/v2" in prompt
     assert "COMPLETE plan" in prompt
 
 
@@ -291,7 +291,7 @@ def test_email_sends_prompt(client: TestClient, monkeypatch: pytest.MonkeyPatch)
     body = message.get_body(("plain",)).get_content()
     assert "Shorter workouts" in body
     assert "http://raspberrypi.local:8080/schedule/assistant" in body
-    assert "workout-pal-plan/v1" in body
+    assert "workout-pal-plan/v2" in body
     attachment = next(message.iter_attachments())
     assert attachment.get_filename() == "workout-pal-prompt.txt"
     assert "EX0001" in attachment.get_content()

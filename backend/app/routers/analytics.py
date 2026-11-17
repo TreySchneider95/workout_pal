@@ -10,6 +10,7 @@ from app import schemas
 from app.deps import DB, CurrentProfile
 from app.models import SessionStatus, WorkoutSession, WorkoutSessionExercise, WorkoutTemplate
 from app.serializers import exercise_volume, session_duration_minutes
+from app.services.plan import get_app_settings, plan_week, runs_in_week
 from app.services.progression import WEIGHTED
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
@@ -35,11 +36,17 @@ def summary(
         .options(selectinload(WorkoutSession.exercises).selectinload(WorkoutSessionExercise.sets))
         .order_by(WorkoutSession.performed_on, WorkoutSession.started_at)
     ).all()
-    scheduled_days = {
-        wd for wd in db.scalars(select(WorkoutTemplate.weekday).where(
-            WorkoutTemplate.profile_id == profile.id, WorkoutTemplate.weekday.is_not(None)
-        ))
-    }
+    settings = get_app_settings(db, profile.id)
+    scheduled = db.scalars(select(WorkoutTemplate).where(
+        WorkoutTemplate.profile_id == profile.id, WorkoutTemplate.weekday.is_not(None)
+    )).all()
+
+    def planned_on(day: date) -> bool:
+        week = plan_week(settings, day)
+        return any(t.weekday == day.weekday() and runs_in_week(t, week) for t in scheduled)
+
+    def planned_in_week(start: date) -> int:
+        return sum(planned_on(start + timedelta(days=i)) for i in range(7))
 
     this_week = _week_start(today)
     first_week = this_week - timedelta(weeks=WEEKS - 1)
@@ -56,7 +63,7 @@ def summary(
         weeks.append(schemas.WeekBucket(
             week_start=start,
             workouts=len(items),
-            planned=len(scheduled_days),
+            planned=planned_in_week(start),
             minutes=sum(session_duration_minutes(s) or 0 for s in items),
             volume=round(sum(exercise_volume(se) for s in items for se in s.exercises), 1),
         ))
@@ -68,7 +75,7 @@ def summary(
     if first_session_day is not None:
         day = max(window_start, first_session_day)
         while day <= today:
-            if day.weekday() in scheduled_days:
+            if planned_on(day):
                 planned_days += 1
                 if day in by_day:
                     done_days += 1
@@ -76,13 +83,22 @@ def summary(
     consistency = round(100 * done_days / planned_days) if planned_days else None
 
     # Streak: consecutive weeks (before this one, plus this one if already complete) that hit the plan.
+    # Weeks with nothing planned (e.g. a rest week in a multi-week plan) don't break it.
     streak = 0
-    planned_per_week = len(scheduled_days)
-    if planned_per_week:
-        current = len(by_week.get(this_week, []))
-        week = this_week if current >= planned_per_week else this_week - timedelta(weeks=1)
-        while len({s.performed_on for s in by_week.get(week, [])}) >= planned_per_week:
-            streak += 1
+    planned_this_week = planned_in_week(this_week)
+    if sessions and scheduled:
+        def trained_days(week: date) -> int:
+            return len({s.performed_on for s in by_week.get(week, [])})
+
+        earliest = _week_start(sessions[0].performed_on)
+        week = this_week if planned_this_week and trained_days(this_week) >= planned_this_week \
+            else this_week - timedelta(weeks=1)
+        while week >= earliest:
+            planned = planned_in_week(week)
+            if planned and trained_days(week) < planned:
+                break
+            if planned:
+                streak += 1
             week -= timedelta(weeks=1)
 
     # Personal bests: a session whose top working weight beats every earlier session.
@@ -112,13 +128,13 @@ def summary(
     day = calendar_start
     while day <= calendar_end:
         calendar.append(schemas.CalendarDay(date=day, session_ids=by_day.get(day, []),
-                                            planned=day.weekday() in scheduled_days))
+                                            planned=planned_on(day)))
         day += timedelta(days=1)
 
     durations = [m for m in (session_duration_minutes(s) for s in sessions) if m is not None]
     return schemas.AnalyticsSummary(
         workouts_this_week=len(by_week.get(this_week, [])),
-        planned_this_week=planned_per_week,
+        planned_this_week=planned_this_week,
         total_workouts=len(sessions),
         total_minutes=sum(durations),
         average_minutes=round(sum(durations) / len(durations)) if durations else None,

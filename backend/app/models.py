@@ -152,14 +152,16 @@ class WorkoutTemplate(Base):
     __tablename__ = "workout_templates"
     __table_args__ = (
         UniqueConstraint("profile_id", "name", name="uq_workout_templates_profile_name"),
-        UniqueConstraint("profile_id", "weekday", name="uq_workout_templates_profile_weekday"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     profile_id: Mapped[int] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(100))
     # 0 = Monday ... 6 = Sunday. NULL = not scheduled (can still be performed manually).
+    # A day holds at most one workout in any plan week (checked in code, not by the database).
     weekday: Mapped[int | None] = mapped_column(Integer)
+    # Plan weeks (1-based) this workout runs in; NULL = every week. See AppSettings.plan_weeks.
+    weeks: Mapped[list[int] | None] = mapped_column(JSON)
     # Manual override; otherwise estimated from the exercises.
     estimated_duration_minutes: Mapped[int | None] = mapped_column(Integer)
     notes: Mapped[str | None] = mapped_column(Text)
@@ -314,6 +316,8 @@ class AppSettings(Base):
     # Week 1 starts here; weeks before `ramp_weeks` use each exercise's ramp_sets.
     program_start_date: Mapped[date | None] = mapped_column(Date)
     ramp_weeks: Mapped[int] = mapped_column(Integer, default=2)
+    # Length of the plan in weeks; it repeats from week 1 afterwards. 1 = same every week.
+    plan_weeks: Mapped[int] = mapped_column(Integer, default=1)
     rest_timer_auto_start: Mapped[bool] = mapped_column(Boolean, default=True)
     rest_timer_sound: Mapped[bool] = mapped_column(Boolean, default=True)
     # Progression: suggest a lower weight when average reps fall this far below the minimum.

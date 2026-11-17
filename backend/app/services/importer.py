@@ -39,7 +39,7 @@ from app.models import (
     WorkoutTemplate,
     WorkoutTemplateExercise,
 )
-from app.services.plan import WEEKDAYS
+from app.services.plan import WEEKDAYS, schedule_conflicts
 from app.services.prescription import parse_prescription
 
 IMAGE_DIR = "exercise-images"
@@ -501,13 +501,12 @@ def _import_plan(
         else:
             report.templates_updated += 1
 
-        # Free the weekday if another template currently occupies it.
-        for other in templates.values():
-            if other is not template and other.weekday == weekday:
-                report.warnings.append(
-                    f"'{other.name}' was scheduled on {WEEKDAYS[weekday]}; unscheduled to make room for '{name}'"
-                )
-                other.weekday = None
+        # Free the weekday if another template occupies it in the same plan weeks.
+        for other in schedule_conflicts(templates.values(), weekday, template.weeks, exclude=template):
+            report.warnings.append(
+                f"'{other.name}' was scheduled on {WEEKDAYS[weekday]}; unscheduled to make room for '{name}'"
+            )
+            other.weekday = None
         db.flush()
         template.weekday = weekday
 

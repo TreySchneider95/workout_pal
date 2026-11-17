@@ -143,6 +143,7 @@ export default function SettingsPage() {
       queryClient.setQueryData(["settings"], s);
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       void queryClient.invalidateQueries({ queryKey: ["templates"] });
+      void queryClient.invalidateQueries({ queryKey: ["analytics"] });
     },
   });
 
@@ -165,11 +166,14 @@ export default function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Program</CardTitle>
-          <CardDescription>The first weeks use fewer sets (from the plan's “weeks 1–2” column).</CardDescription>
+          <CardDescription>
+            Weeks run Monday to Sunday. The first weeks use fewer sets (from the plan's “weeks 1–2” column).
+            {s.plan_weeks > 1 && ` Your ${s.plan_weeks}-week plan starts over after week ${s.plan_weeks}.`}
+          </CardDescription>
         </CardHeader>
         <CardContent className="divide-y divide-border">
           <div className="pb-3">
-            <Field label="Program start date" hint="Set automatically when you start your first workout.">
+            <Field label="Program start date" hint="Week 1 is the week containing this date. Set automatically when you start your first workout; change the plan's current week from Plan.">
               <div className="flex gap-2">
                 <Input
                   type="date"

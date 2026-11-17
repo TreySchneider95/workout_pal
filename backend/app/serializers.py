@@ -16,7 +16,7 @@ from app.models import (
     WorkoutTemplate,
 )
 from app.services import progression
-from app.services.plan import WEEKDAYS, estimate_minutes, planned_sets
+from app.services.plan import WEEKDAYS, estimate_minutes, planned_sets, weeks_text
 
 MEDIA_PREFIX = "/media"
 
@@ -114,6 +114,8 @@ def template_out(t: WorkoutTemplate, week: int | None, ramp_weeks: int) -> schem
         name=t.name,
         weekday=t.weekday,
         weekday_name=WEEKDAYS[t.weekday] if t.weekday is not None else None,
+        weeks=t.weeks or None,
+        weeks_text=weeks_text(t.weeks),
         estimated_duration_minutes=estimate_minutes(t, week, ramp_weeks),
         estimated_duration_override=t.estimated_duration_minutes,
         notes=t.notes,
@@ -128,6 +130,8 @@ def template_choice(t: WorkoutTemplate, week: int | None, ramp_weeks: int) -> sc
         name=t.name,
         weekday=t.weekday,
         weekday_name=WEEKDAYS[t.weekday] if t.weekday is not None else None,
+        weeks=t.weeks or None,
+        weeks_text=weeks_text(t.weeks),
         exercise_count=sum(1 for te in t.exercises if not te.skipped),
         estimated_duration_minutes=estimate_minutes(t, week, ramp_weeks),
     )

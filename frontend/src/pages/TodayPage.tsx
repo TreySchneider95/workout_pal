@@ -14,6 +14,7 @@ import { Progress, Skeleton } from "@/components/ui/misc";
 import { useProfile } from "@/hooks/profile";
 import { ApiError, api } from "@/lib/api";
 import { dateLong, isWeighted, lb, minutesText, relativeDay, targetText } from "@/lib/format";
+import { runsInWeek } from "@/lib/planWeeks";
 import { queryClient } from "@/lib/queryClient";
 import type { SessionSummary, Template, TemplateChoice } from "@/lib/types";
 
@@ -146,21 +147,30 @@ function ChooseWorkoutDialog({
   open,
   onOpenChange,
   templates,
+  planWeek,
+  planWeeks,
   onPick,
   pending,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   templates: TemplateChoice[];
+  planWeek: number;
+  planWeeks: number;
   onPick: (id: number | null) => void;
   pending: boolean;
 }) {
+  // Templates come with this week's first; in a multi-week plan, label where the other weeks begin.
+  const firstOther = planWeeks > 1 ? templates.findIndex((t) => !runsInWeek(t.weeks, planWeek)) : -1;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent title="Choose a workout" description="Your weekly schedule isn't changed.">
+      <DialogContent title="Choose a workout" description="Your plan isn't changed.">
         <ul className="space-y-2">
-          {templates.map((t) => (
+          {templates.map((t, i) => (
             <li key={t.id}>
+              {i === firstOther && (
+                <div className="px-1 pb-1 pt-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Other weeks</div>
+              )}
               <button
                 disabled={pending}
                 onClick={() => onPick(t.id)}
@@ -169,7 +179,14 @@ function ChooseWorkoutDialog({
                 <div className="min-w-0 flex-1">
                   <div className="font-semibold">{t.name}</div>
                   <div className="text-sm text-muted-foreground">
-                    {t.weekday_name ?? "Unscheduled"} · {t.exercise_count} exercises · ~{minutesText(t.estimated_duration_minutes)}
+                    {[
+                      t.weekday_name ?? "Unscheduled",
+                      planWeeks > 1 && t.weeks ? t.weeks_text : null,
+                      `${t.exercise_count} exercises`,
+                      `~${minutesText(t.estimated_duration_minutes)}`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </div>
                 </div>
                 <Play className="size-5 text-primary" />
@@ -223,7 +240,13 @@ export default function TodayPage() {
         title={d.active_session ? "Keep going" : today ? today.name : noPlan ? `Hi, ${profile.name}` : "Rest day"}
         action={
           <>
-            {d.program_week && <Badge variant="outline">Week {d.program_week}</Badge>}
+            {d.plan_weeks > 1 ? (
+              <Badge variant="outline">
+                Week {d.plan_week} of {d.plan_weeks}
+              </Badge>
+            ) : (
+              d.program_week && <Badge variant="outline">Week {d.program_week}</Badge>
+            )}
             <Button asChild variant="ghost" size="icon" className="lg:hidden" aria-label="Settings">
               <Link to="/settings">
                 <Settings />
@@ -293,7 +316,7 @@ export default function TodayPage() {
                 <Coffee className="size-7 text-muted-foreground" />
               </div>
               <h2 className="mt-4 text-xl font-semibold">Nothing scheduled today</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Today is a rest day in your weekly plan.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Today is a rest day in your plan.</p>
               <div className="grid grid-cols-1 mt-5 gap-2 sm:grid-cols-2">
                 <Button variant="secondary" size="lg" onClick={() => setChooseOpen(true)}>
                   <Shuffle /> Do a workout anyway
@@ -320,12 +343,14 @@ export default function TodayPage() {
             <Link to="/schedule" className="block">
               <Card className="p-5 transition-colors hover:bg-elevated">
                 <div className="flex items-center justify-between">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">This week</div>
+                  <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    This week{d.plan_weeks > 1 && ` · week ${d.plan_week} of ${d.plan_weeks}`}
+                  </div>
                   <CalendarDays className="size-4 text-subtle" />
                 </div>
                 <ul className="mt-3 space-y-1.5 text-sm">
                   {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day, i) => {
-                    const t = d.templates.find((x) => x.weekday === i);
+                    const t = d.templates.find((x) => x.weekday === i && runsInWeek(x.weeks, d.plan_week));
                     return (
                       <li key={day} className={i === d.weekday ? "flex justify-between font-semibold" : "flex justify-between text-muted-foreground"}>
                         <span>{day}</span>
@@ -344,6 +369,8 @@ export default function TodayPage() {
         open={chooseOpen}
         onOpenChange={setChooseOpen}
         templates={d.templates}
+        planWeek={d.plan_week}
+        planWeeks={d.plan_weeks}
         pending={start.isPending}
         onPick={(templateId) => start.mutate(templateId)}
       />

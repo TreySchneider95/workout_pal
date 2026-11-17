@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.deps import DB, CurrentProfile
 from app.models import PlanRevision, Profile
 from app.services import plan_exchange
+from app.services.plan import get_app_settings
 from app.services.mailer import EmailError, send_email
 
 router = APIRouter(prefix="/api/plan-assistant", tags=["plan assistant"])
@@ -19,16 +20,19 @@ OnDate = Annotated[date | None, Query(alias="date", description="The device's lo
 
 
 def _preview(db: DB, profile: Profile, text: str) -> tuple[schemas.PlanPreview, plan_exchange.ValidatedPlan | None]:
+    current_weeks = get_app_settings(db, profile.id).plan_weeks
     try:
         doc = plan_exchange.read_document(text)
     except plan_exchange.DocumentError as exc:
-        return schemas.PlanPreview(ok=False, summary=None, errors=exc.errors, warnings=[], workouts=[]), None
+        return schemas.PlanPreview(ok=False, summary=None, plan_weeks=None, previous_plan_weeks=current_weeks,
+                                   errors=exc.errors, warnings=[], workouts=[]), None
     plan = plan_exchange.validate_document(db, doc)
     workouts = []
     if plan.ok:
         proposed = plan_exchange.plan_to_document(plan)
         workouts = plan_exchange.diff_plans(plan_exchange.export_plan(db, profile.id), proposed)
-    return schemas.PlanPreview(ok=plan.ok, summary=plan.summary, errors=plan.errors,
+    return schemas.PlanPreview(ok=plan.ok, summary=plan.summary, plan_weeks=plan.plan_weeks,
+                               previous_plan_weeks=current_weeks, errors=plan.errors,
                                warnings=plan.warnings, workouts=workouts), plan
 
 
@@ -93,11 +97,12 @@ def preview(body: schemas.PlanDocumentIn, db: DB, profile: CurrentProfile) -> sc
 
 
 @router.post("/apply", response_model=schemas.PlanRevisionOut)
-def apply(body: schemas.PlanDocumentIn, db: DB, profile: CurrentProfile) -> schemas.PlanRevisionOut:
+def apply(body: schemas.PlanApplyIn, db: DB, profile: CurrentProfile, on_date: OnDate = None) -> schemas.PlanRevisionOut:
     result, plan = _preview(db, profile, body.document)
     if plan is None or not plan.ok:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, {"message": result.errors[0], "errors": result.errors})
-    revision = plan_exchange.apply_plan(db, profile.id, plan)
+    revision = plan_exchange.apply_plan(db, profile.id, plan,
+                                        restart_on=(on_date or date.today()) if body.restart else None)
     return schemas.PlanRevisionOut.model_validate(revision).model_copy(update={"can_undo": True})
 
 

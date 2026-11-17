@@ -8,20 +8,26 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { useProfile } from "@/hooks/profile";
 import { api } from "@/lib/api";
 import { copyText, downloadText } from "@/lib/clipboard";
+import { planLengthText } from "@/lib/planWeeks";
 import { queryClient } from "@/lib/queryClient";
 import type { ChangeStatus, PlanDiffWorkout, PlanPreview, PlanRevision } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const EXAMPLES = [
+  "Build me a 6-week plan that gets harder each week",
+  "Add a lighter deload week every 4th week",
   "Add more core work",
   "Keep every workout under 45 minutes",
   "My shoulder is sore. Swap out anything overhead for now",
   "I'm hitting the top of my rep ranges. Make it harder",
   "Move Friday's workout to Sunday",
 ];
+
+const REFRESH_AFTER_PLAN_CHANGE = ["templates", "template", "dashboard", "exercises", "plan-revisions", "settings", "analytics"];
 
 const STATUS_BADGE: Record<ChangeStatus, { label: string; variant: "success" | "destructive" | "warning" | "default" }> = {
   added: { label: "New", variant: "success" },
@@ -73,7 +79,10 @@ function AskStep() {
     <Card>
       <CardHeader>
         <StepTitle n={1}>Describe what you want changed</StepTitle>
-        <CardDescription>Plain words are fine. The prompt includes {profile.name}'s current plan, recent weights, your equipment and every exercise in the library.</CardDescription>
+        <CardDescription>
+          Plain words are fine. Ask for changes to the plan you have, or for a whole program that changes from week to week (say, 6 weeks). The prompt
+          includes {profile.name}'s current plan, recent weights, your equipment and every exercise in the library.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <Textarea
@@ -83,7 +92,7 @@ function AskStep() {
             setRequest(e.target.value);
             setPrompt(null);
           }}
-          placeholder="e.g. I want to work on my glutes more and I only have 40 minutes on weekdays."
+          placeholder="e.g. I want to work on my glutes more and I only have 40 minutes on weekdays. Or: build me a 6-week program that gets harder each week."
           aria-label="What do you want changed?"
         />
         <div className="flex flex-wrap gap-1.5">
@@ -160,7 +169,10 @@ function WorkoutDiff({ workout }: { workout: PlanDiffWorkout }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className={cn("font-semibold", workout.status === "removed" && "line-through opacity-60")}>{workout.name}</div>
-          <div className="text-sm text-muted-foreground">{day ?? "Not scheduled"}</div>
+          <div className="text-sm text-muted-foreground">
+            {day ?? "Not scheduled"}
+            {workout.weeks && ` · ${workout.weeks_text}`}
+          </div>
         </div>
         <Badge variant={badge.variant}>{badge.label}</Badge>
       </div>
@@ -200,10 +212,16 @@ function WorkoutDiff({ workout }: { workout: PlanDiffWorkout }) {
   );
 }
 
+/** Whether applying `preview` would change anything at all. */
+function hasChanges(preview: PlanPreview): boolean {
+  return preview.plan_weeks !== preview.previous_plan_weeks || preview.workouts.some((w) => w.status !== "unchanged");
+}
+
 function PreviewResult({ preview }: { preview: PlanPreview }) {
   const [copied, setCopied] = React.useState(false);
   const changed = preview.workouts.filter((w) => w.status !== "unchanged");
   const unchanged = preview.workouts.length - changed.length;
+  const lengthChanged = preview.plan_weeks !== null && preview.plan_weeks !== preview.previous_plan_weeks;
 
   return (
     <div className="space-y-3">
@@ -245,8 +263,17 @@ function PreviewResult({ preview }: { preview: PlanPreview }) {
       {preview.ok && (
         <>
           {preview.summary && <blockquote className="border-l-2 border-primary pl-3 text-sm text-muted-foreground">{preview.summary}</blockquote>}
+          {lengthChanged && (
+            <p className="text-sm">
+              <span className="font-semibold">{planLengthText(preview.plan_weeks!)}</span>
+              <span className="text-muted-foreground"> (was: {planLengthText(preview.previous_plan_weeks).toLowerCase()})</span>
+              {preview.plan_weeks! > 1 && <span className="text-muted-foreground">. After week {preview.plan_weeks} it starts again at week 1.</span>}
+            </p>
+          )}
           {changed.length === 0 ? (
-            <p className="text-sm text-muted-foreground">This plan is the same as the current one.</p>
+            <p className="text-sm text-muted-foreground">
+              {lengthChanged ? "The workouts themselves are unchanged." : "This plan is the same as the current one."}
+            </p>
           ) : (
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
               {changed.map((w) => (
@@ -269,16 +296,24 @@ function ApplyStep() {
   const { profile } = useProfile();
   const [text, setText] = React.useState("");
   const [preview, setPreview] = React.useState<PlanPreview | null>(null);
+  const [restart, setRestart] = React.useState(false);
   const fileInput = React.useRef<HTMLInputElement>(null);
 
-  const check = useMutation({ mutationFn: (document: string) => api.previewPlan(document), onSuccess: setPreview });
+  const check = useMutation({
+    mutationFn: (document: string) => api.previewPlan(document),
+    onSuccess: (p) => {
+      setPreview(p);
+      // A new multi-week program usually starts at week 1; edits to the current one don't.
+      setRestart((p.plan_weeks ?? 1) > 1 && p.plan_weeks !== p.previous_plan_weeks);
+    },
+  });
   const apply = useMutation({
-    mutationFn: () => api.applyPlan(text),
+    mutationFn: () => api.applyPlan(text, restart && (preview?.plan_weeks ?? 1) > 1),
     onSuccess: () => {
       toast.success(`${profile.name}'s plan was updated`);
       setText("");
       setPreview(null);
-      for (const key of ["templates", "dashboard", "exercises", "plan-revisions"]) void queryClient.invalidateQueries({ queryKey: [key] });
+      for (const key of REFRESH_AFTER_PLAN_CHANGE) void queryClient.invalidateQueries({ queryKey: [key] });
     },
   });
 
@@ -325,10 +360,21 @@ function ApplyStep() {
           />
         </div>
         {preview && <PreviewResult preview={preview} />}
-        {preview?.ok && preview.workouts.some((w) => w.status !== "unchanged") && (
-          <Button size="lg" className="w-full" disabled={apply.isPending} onClick={() => apply.mutate()}>
-            <Check /> {apply.isPending ? "Applying…" : `Apply to ${profile.name}'s plan`}
-          </Button>
+        {preview?.ok && hasChanges(preview) && (
+          <>
+            {(preview.plan_weeks ?? 1) > 1 && (
+              <label className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3">
+                <div>
+                  <div className="font-medium">Start at week 1 this week</div>
+                  <div className="text-sm text-muted-foreground">Off: keep counting weeks from the program start date in Settings.</div>
+                </div>
+                <Switch checked={restart} onCheckedChange={setRestart} aria-label="Start at week 1 this week" />
+              </label>
+            )}
+            <Button size="lg" className="w-full" disabled={apply.isPending} onClick={() => apply.mutate()}>
+              <Check /> {apply.isPending ? "Applying…" : `Apply to ${profile.name}'s plan`}
+            </Button>
+          </>
         )}
       </CardContent>
     </Card>
@@ -342,7 +388,7 @@ function RevisionRow({ revision }: { revision: PlanRevision }) {
     mutationFn: () => api.undoPlanRevision(revision.id),
     onSuccess: () => {
       toast.success("Change undone");
-      for (const key of ["templates", "dashboard", "exercises", "plan-revisions"]) void queryClient.invalidateQueries({ queryKey: [key] });
+      for (const key of REFRESH_AFTER_PLAN_CHANGE) void queryClient.invalidateQueries({ queryKey: [key] });
     },
   });
   return (
@@ -372,7 +418,7 @@ export default function PlanAssistantPage() {
       <header className="pb-1 pt-4 lg:pt-10">
         <Button asChild variant="ghost" size="sm" className="-ml-3 text-muted-foreground">
           <Link to="/schedule">
-            <ChevronLeft /> Weekly plan
+            <ChevronLeft /> Plan
           </Link>
         </Button>
         <p className="mt-1 text-sm font-medium text-muted-foreground">{profile.name}'s plan</p>

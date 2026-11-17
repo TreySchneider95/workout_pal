@@ -16,7 +16,7 @@ from app.models import (
     WorkoutTemplateExercise,
 )
 from app.serializers import session_summary, template_choice, template_out
-from app.services.plan import WEEKDAYS, get_app_settings, program_week
+from app.services.plan import WEEKDAYS, get_app_settings, plan_week, program_week, runs_in_week, set_plan_weeks
 
 router = APIRouter(prefix="/api", tags=["dashboard & settings"])
 
@@ -33,6 +33,7 @@ def dashboard(
     settings = get_app_settings(db, profile.id)
     db.commit()
     week = program_week(settings, today)
+    this_plan_week = plan_week(settings, today)
 
     templates = db.scalars(
         select(WorkoutTemplate).where(WorkoutTemplate.profile_id == profile.id).options(
@@ -40,8 +41,13 @@ def dashboard(
             .selectinload(Exercise.equipment)
         )
     ).all()
-    templates = sorted(templates, key=lambda t: (t.weekday is None, t.weekday or 0, t.name))
-    todays = next((t for t in templates if t.weekday == today.weekday()), None)
+    # This week's workouts first, by day; then other weeks' and unscheduled ones.
+    templates = sorted(templates, key=lambda t: (
+        not runs_in_week(t, this_plan_week), t.weekday is None, t.weekday or 0, min(t.weeks or [0]), t.name
+    ))
+    todays = next(
+        (t for t in templates if t.weekday == today.weekday() and runs_in_week(t, this_plan_week)), None
+    )
 
     active = db.scalar(
         select(WorkoutSession).where(
@@ -69,6 +75,8 @@ def dashboard(
         weekday=today.weekday(),
         weekday_name=WEEKDAYS[today.weekday()],
         program_week=week,
+        plan_week=this_plan_week,
+        plan_weeks=settings.plan_weeks,
         today=template_out(todays, week, settings.ramp_weeks) if todays else None,
         active_session=session_summary(active) if active else None,
         last_session=session_summary(last) if last else None,
@@ -89,6 +97,9 @@ def update_settings(body: schemas.AppSettingsUpdate, db: DB, profile: CurrentPro
     settings = get_app_settings(db, profile.id)
     changes = body.model_dump(exclude_unset=True)
     clear = changes.pop("clear_program_start_date", False)
+    plan_weeks = changes.pop("plan_weeks", None)
+    if plan_weeks is not None and plan_weeks != settings.plan_weeks:
+        set_plan_weeks(db, settings, plan_weeks)
     for key, value in changes.items():
         if value is not None:
             setattr(settings, key, value)

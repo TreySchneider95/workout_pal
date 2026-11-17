@@ -2,6 +2,7 @@ import type { LoadType, SessionExercise, TemplateExercise, TrackingType } from "
 
 export const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 export const WEEKDAYS_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+export const MAX_PLAN_WEEKS = 12;
 
 export function num(value: number | null | undefined): string {
   if (value === null || value === undefined) return "–";

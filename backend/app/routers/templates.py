@@ -11,7 +11,14 @@ from app import schemas
 from app.deps import DB, CurrentProfile
 from app.models import Exercise, Profile, WorkoutTemplate, WorkoutTemplateExercise, utcnow
 from app.serializers import template_out
-from app.services.plan import get_app_settings, program_week
+from app.services.plan import (
+    WEEKDAYS,
+    get_app_settings,
+    normalize_weeks,
+    program_week,
+    schedule_conflicts,
+    weeks_text,
+)
 from app.services.prescription import format_prescription
 from app.services.sessions import default_targets
 
@@ -61,7 +68,7 @@ def list_templates(db: DB, profile: CurrentProfile, on_date: OnDate = None) -> l
         .options(selectinload(WorkoutTemplate.exercises).selectinload(WorkoutTemplateExercise.exercise)
                  .selectinload(Exercise.equipment))
     ).all()
-    templates = sorted(templates, key=lambda t: (t.weekday is None, t.weekday or 0, t.name))
+    templates = sorted(templates, key=lambda t: (t.weekday is None, t.weekday or 0, min(t.weeks or [0]), t.name))
     return [template_out(t, week, ramp) for t in templates]
 
 
@@ -71,29 +78,54 @@ def get_template(template_id: int, db: DB, profile: CurrentProfile, on_date: OnD
     return template_out(_load(db, profile, template_id), week, ramp)
 
 
+def _others(db: Session, template: WorkoutTemplate) -> list[WorkoutTemplate]:
+    return list(db.scalars(select(WorkoutTemplate).where(
+        WorkoutTemplate.profile_id == template.profile_id, WorkoutTemplate.id != template.id
+    )))
+
+
 def _assign_weekday(db: Session, template: WorkoutTemplate, weekday: int | None) -> None:
-    """Move a template to a weekday; a template already on that day swaps into the old slot."""
+    """Move a template to a weekday. Workouts already on that day in the same weeks swap into
+    the old slot (or become unscheduled when that slot is taken in their weeks)."""
     if template.weekday == weekday:
         return
     old = template.weekday
-    occupant = None
-    if weekday is not None:
-        occupant = db.scalar(select(WorkoutTemplate).where(
-            WorkoutTemplate.profile_id == template.profile_id, WorkoutTemplate.weekday == weekday
-        ))
-    template.weekday = None
-    db.flush()
-    if occupant is not None:
-        occupant.weekday = old
-        db.flush()
+    others = _others(db, template)
     template.weekday = weekday
+    for occupant in schedule_conflicts(others, weekday, template.weeks):
+        occupant.weekday = None
+        if old is not None and not schedule_conflicts(others + [template], old, occupant.weeks, exclude=occupant):
+            occupant.weekday = old
     db.flush()
+
+
+def _weeks(db: Session, profile: Profile, weeks: list[int] | None) -> list[int] | None:
+    plan_weeks = get_app_settings(db, profile.id).plan_weeks
+    if weeks and max(weeks) > plan_weeks:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                            f"The plan is {plan_weeks} week{'s' if plan_weeks != 1 else ''} long; "
+                            f"there is no week {max(weeks)}")
+    return normalize_weeks(weeks, plan_weeks)
+
+
+def _set_weeks(db: Session, template: WorkoutTemplate, weeks: list[int] | None) -> None:
+    """Change the weeks a scheduled template runs in, refusing to double-book its day."""
+    clash = schedule_conflicts(_others(db, template), template.weekday, weeks)
+    if clash:
+        other = clash[0]
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"'{other.name}' is already on {WEEKDAYS[other.weekday]} ({weeks_text(other.weeks).lower()}). "
+            "Pick other weeks or move one of the workouts to another day.",
+        )
+    template.weeks = weeks
 
 
 @router.post("", response_model=schemas.TemplateOut, status_code=status.HTTP_201_CREATED)
 def create_template(body: schemas.TemplateCreate, db: DB, profile: CurrentProfile) -> schemas.TemplateOut:
     _check_name(db, profile, body.name)
-    template = WorkoutTemplate(profile_id=profile.id, name=body.name.strip(), notes=body.notes)
+    template = WorkoutTemplate(profile_id=profile.id, name=body.name.strip(), notes=body.notes,
+                               weeks=_weeks(db, profile, body.weeks))
     db.add(template)
     db.flush()
     if body.copy_from_template_id is not None:
@@ -123,6 +155,8 @@ def update_template(template_id: int, body: schemas.TemplateUpdate, db: DB, prof
         template.notes = changes["notes"]
     if "estimated_duration_minutes" in changes:
         template.estimated_duration_minutes = changes["estimated_duration_minutes"] or None
+    if "weeks" in changes:
+        _set_weeks(db, template, _weeks(db, profile, changes["weeks"]))
     if body.unschedule:
         _assign_weekday(db, template, None)
     elif "weekday" in changes and changes["weekday"] is not None:
