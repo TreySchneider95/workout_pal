@@ -6,6 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProfileGate } from "@/hooks/profile";
 import { RestTimerProvider } from "@/hooks/restTimer";
 import { api } from "@/lib/api";
+import ExercisePicturesPage from "@/pages/ExercisePicturesPage";
 import ExercisesPage from "@/pages/ExercisesPage";
 import HistoryPage from "@/pages/HistoryPage";
 import PlanAssistantPage from "@/pages/PlanAssistantPage";
@@ -51,6 +52,7 @@ function ProfileApp() {
           <Route path="workout/:sessionId" element={<WorkoutPage />} />
           <Route path="schedule" element={<SchedulePage />} />
           <Route path="schedule/assistant" element={<PlanAssistantPage />} />
+          <Route path="schedule/pictures" element={<ExercisePicturesPage />} />
           <Route path="schedule/:templateId" element={<TemplateEditorPage />} />
           <Route path="exercises" element={<ExercisesPage />} />
           <Route

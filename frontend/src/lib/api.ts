@@ -4,6 +4,7 @@ import type {
   Dashboard,
   Equipment,
   Exercise,
+  ImagePromptItem,
   ExerciseInput,
   ExerciseProgress,
   ExerciseSet,
@@ -112,6 +113,7 @@ export const api = {
     form.append("file", file);
     return request<Exercise>(`/api/exercises/${id}/image`, { method: "POST", body: form });
   },
+  imagePrompts: (person: "man" | "woman") => request<ImagePromptItem[]>(`/api/image-prompts?person=${person}`),
   exerciseProgress: (id: string) => request<ExerciseProgress>(`/api/exercises/${id}/progress`),
 
   templates: () => request<Template[]>(`/api/workout-templates?date=${localDate()}`),

@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { CalendarCheck, CalendarPlus, ChevronRight, Coffee, Plus, Sparkles } from "lucide-react";
+import { CalendarCheck, CalendarPlus, ChevronRight, Coffee, Images, Plus, Sparkles } from "lucide-react";
 import * as React from "react";
 import { Link, useNavigate } from "react-router";
 
@@ -7,6 +7,7 @@ import { EmptyState, PageHeader } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ExerciseImage } from "@/components/ExerciseImage";
 import { WeekPicker } from "@/components/WeekPicker";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -205,6 +206,7 @@ export default function SchedulePage() {
   const isCurrent = week === currentWeek;
   const multiWeek = planWeeks > 1;
   const unscheduled = list.filter((t) => t.weekday === null);
+  const missingPictures = new Set(list.flatMap((t) => t.exercises.filter((te) => !te.exercise.image_url).map((te) => te.exercise.id))).size;
 
   const makeCurrent = useMutation({
     mutationFn: () => api.updateSettings({ program_start_date: startDateForWeek(week) }),
@@ -261,6 +263,12 @@ export default function SchedulePage() {
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">
                 <PlanLengthSelect templates={list} planWeeks={planWeeks} />
+                <Button asChild size="sm" variant="ghost">
+                  <Link to="/schedule/pictures">
+                    <Images /> Exercise pictures
+                    {missingPictures > 0 && <Badge variant="warning">{missingPictures} missing</Badge>}
+                  </Link>
+                </Button>
                 {multiWeek && !isCurrent && (
                   <Button size="sm" variant="ghost" disabled={makeCurrent.isPending} onClick={() => makeCurrent.mutate()}>
                     <CalendarCheck /> Make week {week} this week

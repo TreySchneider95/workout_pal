@@ -572,6 +572,13 @@ class PlanPreview(BaseModel):
     workouts: list[PlanDiffWorkout]
 
 
+class ImagePromptItem(BaseModel):
+    exercise: ExerciseBrief
+    has_image: bool
+    workouts: list[str]  # where it appears in the plan, e.g. "Upper A (Mon)"
+    prompt: str
+
+
 class PlanRevisionOut(ORM):
     id: int
     created_at: datetime

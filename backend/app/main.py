@@ -9,6 +9,7 @@ from app.routers import (
     equipment,
     exercises,
     history,
+    image_prompts,
     plan_assistant,
     profiles,
     sessions,
@@ -34,7 +35,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for module in (profiles, dashboard, exercises, equipment, templates, plan_assistant, sessions, history, analytics):
+for module in (profiles, dashboard, exercises, equipment, templates, plan_assistant, image_prompts,
+               sessions, history, analytics):
     app.include_router(module.router)
 
 

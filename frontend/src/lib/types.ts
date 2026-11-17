@@ -131,6 +131,14 @@ export interface ExerciseBrief {
   equipment_name: string | null;
 }
 
+export interface ImagePromptItem {
+  exercise: ExerciseBrief;
+  has_image: boolean;
+  /** Where it appears in the plan, e.g. "Upper A (Mon)". */
+  workouts: string[];
+  prompt: string;
+}
+
 export interface TemplateExercise {
   id: number;
   exercise: ExerciseBrief;
