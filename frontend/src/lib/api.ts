@@ -90,7 +90,7 @@ export const api = {
 
   settings: () => request<AppSettings>("/api/settings"),
   updateSettings: (body: Partial<AppSettings> & { clear_program_start_date?: boolean }) =>
-    request<AppSettings>("/api/settings", { method: "PATCH", body: json(body) }),
+    request<AppSettings>(`/api/settings?date=${localDate()}`, { method: "PATCH", body: json(body) }),
 
   equipment: () => request<Equipment[]>("/api/equipment"),
   updateEquipment: (id: number, body: Partial<Equipment>) =>

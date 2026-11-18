@@ -51,6 +51,7 @@ from app.services.plan import (
     WEEKDAYS,
     get_app_settings,
     normalize_weeks,
+    plan_start_for,
     plan_week,
     program_week,
     weeks_overlap,
@@ -113,9 +114,13 @@ def _parse_weeks(value: object) -> object:
             weeks.append(int(part))
         elif m := _WEEK_RANGE.match(part):
             lo, hi = sorted((int(m.group(1)), int(m.group(2))))
-            weeks.extend(range(lo, min(hi, MAX_PLAN_WEEKS + 1) + 1))
+            if hi > 99:
+                raise ValueError(f"weeks '{value}' go past week {MAX_PLAN_WEEKS}, the longest a plan can be")
+            weeks.extend(range(lo, hi + 1))  # weeks past the plan's end are reported by validation
         else:
             raise ValueError(f"can't read weeks '{value}' (use a list of week numbers like [1, 2, 3], or null)")
+    if not weeks:
+        raise ValueError(f"can't read weeks '{value}' (use a list of week numbers like [1, 2, 3], or null)")
     return weeks
 
 
@@ -124,7 +129,7 @@ class DocWorkout(BaseModel):
 
     name: str = Field(min_length=1, max_length=100)
     day: str | None = Field(None, max_length=20)
-    weeks: list[Annotated[int, Field(ge=1, le=MAX_PLAN_WEEKS)]] | None = Field(None, max_length=50)
+    weeks: list[Annotated[int, Field(ge=1, le=MAX_PLAN_WEEKS)]] | None = Field(None, max_length=100)
     notes: str | None = Field(None, max_length=2000)
     exercises: list[DocExercise] = Field(default_factory=list, max_length=40)
 
@@ -272,13 +277,13 @@ def _example_document() -> str:
 
     return json.dumps({
         "format": FORMAT,
-        "summary": "A 4-week plan: Upper A builds over weeks 1-3, then week 4 is a lighter deload.",
+        "summary": "A 4-week plan: Upper A builds over weeks 1-3, then week 4 is an easier deload week.",
         "plan_weeks": 4,
         "workouts": [
             {"name": "Upper A · Weeks 1-3", "day": "Monday", "weeks": [1, 2, 3], "notes": None,
              "exercises": [bench(3, "8-10", 25, "Pause 1 second at the bottom.")]},
             {"name": "Upper A · Deload", "day": "Monday", "weeks": [4], "notes": "Easy week to recover.",
-             "exercises": [bench(2, "10-12", 20, None)]},
+             "exercises": [bench(2, "8-10", 25, "Stop 2-3 reps short of failure.")]},
         ],
     }, indent=2, ensure_ascii=False)
 
@@ -316,7 +321,8 @@ def build_prompt(db: Session, profile: Profile, request: str, today: date | None
         f'"sets_first_weeks": sets for their first {ramp} program weeks (counted from when they\n'
         '  started training, not from the start of the plan), or null to use "sets". In a multi-week\n'
         '  plan, write lighter early weeks directly into those weeks instead and use null.'
-        if ramp else '"sets_first_weeks": null.'
+        if ramp else '"sets_first_weeks": not used right now (their ramp-in is off). Keep the value\n'
+        '  an exercise already has, and use null for new exercises.'
     )
 
     sections = [
@@ -417,7 +423,8 @@ Rules:
   actually lifted and suggests the next weight up once they reach the top of the rep range (or a
   lighter one if they fall well short), so weights you give for later weeks won't override what
   they lift. Drive week-to-week progression with sets and rep ranges (e.g. 3 x 10-12, then
-  4 x 8-10, then 4 x 6-8) and make deload weeks easier with fewer sets or higher rep ranges.
+  4 x 8-10, then 4 x 6-8) and make deload weeks easier with fewer sets, not a lower weight
+  (the app would prefill their usual weight anyway). Give each version of an exercise the same weight.
 - "rest_seconds": rest between sets (0-900).
 - "notes": optional short coaching cue, or null.
 - "skipped": true keeps an exercise in the plan but leaves it out of workouts for now
@@ -577,6 +584,9 @@ def validate_document(db: Session, doc: PlanDocument) -> ValidatedPlan:
         if name.lower() in names:
             plan.errors.append(f"Two workouts are named {label}; names must be unique.")
         names[name.lower()] = name
+        if w.weeks is not None and not w.weeks:
+            plan.errors.append(f'{label} has "weeks": [] (no weeks). List the weeks it runs in, '
+                               'or use null for every week.')
         weeks = normalize_weeks([n for n in (w.weeks or []) if n <= plan_weeks] or None, plan_weeks)
 
         weekday = None
@@ -788,21 +798,28 @@ def diff_plans(current: dict, proposed: dict) -> list[dict]:
 # --------------------------------------------------------------------------- applying
 
 
+_KEEP = object()
+
+
 def apply_plan(
     db: Session, profile_id: int, plan: ValidatedPlan, *, source: str = "document",
-    restart_on: date | None = None,
+    restart_on: date | None = None, plan_start: date | None | object = _KEEP,
 ) -> PlanRevision:
     """Replace the profile's plan with `plan` (already validated) and record a revision. Commits.
 
-    `restart_on` makes that date's week week 1 of the plan (and of the program)."""
+    `restart_on` starts plan week 1 in that date's week (next week at the weekend); `plan_start`
+    sets the plan start date directly (used by undo). The training start date, and with it the
+    ramp-in, never changes here."""
     assert plan.ok
     settings = get_app_settings(db, profile_id)
     previous = export_plan(db, profile_id)
     if restart_on is not None:
-        # Kept with the revision so undo can put the old program week back.
-        start = settings.program_start_date
-        previous["program_start_date"] = start.isoformat() if start else None
-        settings.program_start_date = restart_on
+        plan_start = plan_start_for(restart_on)
+    if plan_start is not _KEEP:
+        # Kept with the revision so undo can put the old plan week back.
+        start = settings.plan_start_date
+        previous["plan_start_date"] = start.isoformat() if start else None
+        settings.plan_start_date = plan_start
     settings.plan_weeks = plan.plan_weeks
     templates = _load_templates(db, profile_id)
     existing = {t.name.lower(): t for t in templates}
@@ -878,7 +895,13 @@ def undo_revision(db: Session, revision: PlanRevision) -> PlanRevision:
         raise DocumentError(plan.errors)
     plan.summary = f"Undid: {revision.summary}" if revision.summary else "Undid the previous change"
     revision.undone_at = utcnow()
-    if "program_start_date" in revision.previous_plan:  # the change restarted the plan at week 1
+    plan_start: date | None | object = _KEEP
+    if "plan_start_date" in revision.previous_plan:  # the change restarted the plan at week 1
+        start = revision.previous_plan["plan_start_date"]
+        plan_start = date.fromisoformat(start) if start else None
+    elif "program_start_date" in revision.previous_plan:  # older revisions moved the training start
         start = revision.previous_plan["program_start_date"]
-        get_app_settings(db, revision.profile_id).program_start_date = date.fromisoformat(start) if start else None
-    return apply_plan(db, revision.profile_id, plan, source="undo")
+        restored = date.fromisoformat(start) if start else None
+        get_app_settings(db, revision.profile_id).program_start_date = restored
+        plan_start = plan_start_for(restored) if restored else None
+    return apply_plan(db, revision.profile_id, plan, source="undo", plan_start=plan_start)

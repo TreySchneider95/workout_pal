@@ -57,6 +57,7 @@ export default function ExerciseDetailPage() {
     queryClient.setQueryData(["exercise", ex.id], ex);
     void queryClient.invalidateQueries({ queryKey: ["exercises"] });
     void queryClient.invalidateQueries({ queryKey: ["templates"] });
+    void queryClient.invalidateQueries({ queryKey: ["image-prompts"] }); // the Exercise pictures list
   };
   const update = useMutation({ mutationFn: (body: Parameters<typeof api.updateExercise>[1]) => api.updateExercise(exerciseId, body), onSuccess: onSaved });
   const upload = useMutation({

@@ -170,6 +170,13 @@ export default function ExercisePicturesPage() {
             <Skeleton key={i} className="h-40" />
           ))}
         </div>
+      ) : items.isError ? (
+        <EmptyState icon={Images} title="Couldn't load your plan's exercises">
+          <p>Check the connection to the app and try again.</p>
+          <Button className="mt-4" variant="secondary" onClick={() => void items.refetch()}>
+            Try again
+          </Button>
+        </EmptyState>
       ) : !all.length ? (
         <EmptyState icon={Images} title="No plan yet">
           <p>Once your plan has workouts, the exercises in it show up here.</p>

@@ -295,3 +295,4 @@ def test_email_sends_prompt(client: TestClient, monkeypatch: pytest.MonkeyPatch)
     attachment = next(message.iter_attachments())
     assert attachment.get_filename() == "workout-pal-prompt.txt"
     assert "EX0001" in attachment.get_content()
+    assert attachment.get_content_charset() == "utf-8"

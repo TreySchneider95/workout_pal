@@ -10,9 +10,14 @@ vi.mock("sonner", () => ({ toast: { error: toastError } }));
 
 const png = () => new File([new Uint8Array([137, 80, 78, 71])], "image.png", { type: "image/png" });
 
+const clipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   toastError.mockClear();
+  if (clipboard) Object.defineProperty(navigator, "clipboard", clipboard);
+  else delete (navigator as { clipboard?: unknown }).clipboard;
 });
 
 describe("PastePicture", () => {
@@ -62,5 +67,26 @@ describe("pictureFile", () => {
     const jpeg = await pictureFile(new Blob(["x"], { type: "image/jpeg" }), "ex0001");
     expect(jpeg?.name).toBe("ex0001.jpg");
     expect(await pictureFile(new Blob(["hello"], { type: "text/plain" }))).toBeNull();
+  });
+
+  it("scales big photos in other formats down so they fit the upload limit", async () => {
+    vi.stubGlobal("createImageBitmap", vi.fn().mockResolvedValue({ width: 4000, height: 3000 }));
+    const drawn: number[][] = [];
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      fillRect: () => {},
+      drawImage: (_: unknown, ...args: number[]) => drawn.push(args),
+    } as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(function (this: HTMLCanvasElement, done, type) {
+      done(new Blob([new Uint8Array(1000)], { type: type ?? "image/png" }));
+    });
+
+    const file = await pictureFile(new Blob(["heic"], { type: "image/heic" }), "ex0002");
+    expect(file?.name).toBe("ex0002.png");
+    expect(drawn[0]).toEqual([0, 0, 2400, 1800]);
+  });
+
+  it("gives up (rather than failing the upload) when a picture can't be opened", async () => {
+    vi.stubGlobal("createImageBitmap", vi.fn().mockRejectedValue(new Error("unsupported")));
+    expect(await pictureFile(new Blob(["avif"], { type: "image/avif" }))).toBeNull();
   });
 });

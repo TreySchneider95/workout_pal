@@ -23,7 +23,8 @@ def send_email(to: str, subject: str, body: str, attachments: list[tuple[str, st
     message["Subject"] = subject
     message.set_content(body)
     for filename, text in attachments:
-        message.add_attachment(text.encode("utf-8"), maintype="text", subtype="plain", filename=filename)
+        # A str attachment is sent as text/plain; charset=utf-8, so characters like "·" survive.
+        message.add_attachment(text, subtype="plain", charset="utf-8", filename=filename)
 
     try:
         if settings.smtp_security == "ssl":

@@ -171,6 +171,8 @@ export interface Template {
   notes: string | null;
   exercise_count: number;
   exercises: TemplateExercise[];
+  /** After a create or move: what happened to other workouts on that day. */
+  schedule_notes?: string[];
 }
 
 export interface TemplateExerciseInput {
@@ -323,7 +325,10 @@ export interface HistoryPage {
 }
 
 export interface AppSettings {
+  /** When training started; drives the lighter ramp-in weeks. */
   program_start_date: string | null;
+  /** The Monday plan week 1 starts on. */
+  plan_start_date: string | null;
   ramp_weeks: number;
   plan_weeks: number;
   rest_timer_auto_start: boolean;

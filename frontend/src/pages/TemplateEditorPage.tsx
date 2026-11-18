@@ -234,6 +234,8 @@ export default function TemplateEditorPage() {
       queryClient.setQueryData(["template", t.id], t);
       void queryClient.invalidateQueries({ queryKey: ["templates"] });
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      // e.g. "Lower A moved to Monday." — said only once the server has actually done it.
+      for (const note of t.schedule_notes ?? []) toast.info(note);
     },
   });
 
@@ -272,7 +274,8 @@ export default function TemplateEditorPage() {
     mutate.mutate(() => api.reorderTemplate(t.id, ids));
   };
   const planWeeks = settings.data?.plan_weeks ?? 1;
-  // Workouts on `day` in any of this workout's weeks; they swap places when it moves there.
+  // Workouts on `day` in any of this workout's weeks; the server swaps them into this workout's day
+  // when they fit there, otherwise they keep only the other weeks (or are unscheduled).
   const occupantsOf = (day: number) => (all.data ?? []).filter((x) => x.weekday === day && x.id !== t.id && weeksOverlap(x.weeks, t.weeks));
   const names = (list: Template[]) => list.map((x) => x.name).join(" & ");
 
@@ -316,16 +319,14 @@ export default function TemplateEditorPage() {
             value={t.weekday ?? ""}
             onChange={(e) => {
               const v = e.target.value;
-              const occupants = v === "" ? [] : occupantsOf(Number(v));
               mutate.mutate(() => api.updateTemplate(t.id, v === "" ? { unschedule: true } : { weekday: Number(v) }));
-              if (occupants.length) toast.info(`${names(occupants)} moved to ${t.weekday !== null ? WEEKDAYS[t.weekday] : "unscheduled"}`);
             }}
           >
             <option value="">Not scheduled</option>
             {WEEKDAYS.map((d, i) => (
               <option key={d} value={i}>
                 {t.weeks ? d : `Every ${d}`}
-                {occupantsOf(i).length ? ` (swap with ${names(occupantsOf(i))})` : ""}
+                {occupantsOf(i).length ? ` (${names(occupantsOf(i))})` : ""}
               </option>
             ))}
           </Select>

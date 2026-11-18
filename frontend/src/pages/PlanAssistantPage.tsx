@@ -27,7 +27,7 @@ const EXAMPLES = [
   "Move Friday's workout to Sunday",
 ];
 
-const REFRESH_AFTER_PLAN_CHANGE = ["templates", "template", "dashboard", "exercises", "plan-revisions", "settings", "analytics"];
+const REFRESH_AFTER_PLAN_CHANGE = ["templates", "template", "dashboard", "exercises", "plan-revisions", "settings", "analytics", "image-prompts"];
 
 const STATUS_BADGE: Record<ChangeStatus, { label: string; variant: "success" | "destructive" | "warning" | "default" }> = {
   added: { label: "New", variant: "success" },
@@ -295,31 +295,39 @@ function PreviewResult({ preview }: { preview: PlanPreview }) {
 function ApplyStep() {
   const { profile } = useProfile();
   const [text, setText] = React.useState("");
-  const [preview, setPreview] = React.useState<PlanPreview | null>(null);
+  // The preview always belongs to `checked.text`: applying sends exactly the text that was previewed.
+  const [checked, setChecked] = React.useState<{ text: string; preview: PlanPreview } | null>(null);
+  const preview = checked?.preview ?? null;
   const [restart, setRestart] = React.useState(false);
   const fileInput = React.useRef<HTMLInputElement>(null);
+  const latestText = React.useRef(text);
+  latestText.current = text;
+  // At the weekend, week 1 starts next Monday (the server does the same).
+  const weekend = [0, 6].includes(new Date().getDay());
+  const restartLabel = weekend ? "Start at week 1 on Monday" : "Start at week 1 this week";
 
   const check = useMutation({
     mutationFn: (document: string) => api.previewPlan(document),
-    onSuccess: (p) => {
-      setPreview(p);
+    onSuccess: (p, document) => {
+      if (document !== latestText.current) return; // edited while checking: that check is stale
+      setChecked({ text: document, preview: p });
       // A new multi-week program usually starts at week 1; edits to the current one don't.
       setRestart((p.plan_weeks ?? 1) > 1 && p.plan_weeks !== p.previous_plan_weeks);
     },
   });
   const apply = useMutation({
-    mutationFn: () => api.applyPlan(text, restart && (preview?.plan_weeks ?? 1) > 1),
+    mutationFn: (c: { text: string; preview: PlanPreview }) => api.applyPlan(c.text, restart && (c.preview.plan_weeks ?? 1) > 1),
     onSuccess: () => {
       toast.success(`${profile.name}'s plan was updated`);
       setText("");
-      setPreview(null);
+      setChecked(null);
       for (const key of REFRESH_AFTER_PLAN_CHANGE) void queryClient.invalidateQueries({ queryKey: [key] });
     },
   });
 
   const load = (value: string) => {
     setText(value);
-    setPreview(null);
+    setChecked(null);
   };
 
   return (
@@ -365,13 +373,13 @@ function ApplyStep() {
             {(preview.plan_weeks ?? 1) > 1 && (
               <label className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3">
                 <div>
-                  <div className="font-medium">Start at week 1 this week</div>
-                  <div className="text-sm text-muted-foreground">Off: keep counting weeks from the program start date in Settings.</div>
+                  <div className="font-medium">{restartLabel}</div>
+                  <div className="text-sm text-muted-foreground">Off: stay in the plan week you're in now. Either way, your ramp-in isn't restarted.</div>
                 </div>
-                <Switch checked={restart} onCheckedChange={setRestart} aria-label="Start at week 1 this week" />
+                <Switch checked={restart} onCheckedChange={setRestart} aria-label={restartLabel} />
               </label>
             )}
-            <Button size="lg" className="w-full" disabled={apply.isPending} onClick={() => apply.mutate()}>
+            <Button size="lg" className="w-full" disabled={apply.isPending || !checked} onClick={() => checked && apply.mutate(checked)}>
               <Check /> {apply.isPending ? "Applying…" : `Apply to ${profile.name}'s plan`}
             </Button>
           </>

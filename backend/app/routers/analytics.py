@@ -10,17 +10,13 @@ from app import schemas
 from app.deps import DB, CurrentProfile
 from app.models import SessionStatus, WorkoutSession, WorkoutSessionExercise, WorkoutTemplate
 from app.serializers import exercise_volume, session_duration_minutes
-from app.services.plan import get_app_settings, plan_week, runs_in_week
+from app.services.plan import get_app_settings, plan_week, runs_in_week, week_start
 from app.services.progression import WEIGHTED
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
 WEEKS = 12
 CONSISTENCY_WEEKS = 8
-
-
-def _week_start(day: date) -> date:
-    return day - timedelta(days=day.weekday())
 
 
 @router.get("/summary", response_model=schemas.AnalyticsSummary)
@@ -41,19 +37,32 @@ def summary(
         WorkoutTemplate.profile_id == profile.id, WorkoutTemplate.weekday.is_not(None)
     )).all()
 
+    this_week = week_start(today)
+    # Past weeks use the plan week their sessions recorded, so restarting the plan or changing its
+    # length doesn't rewrite history. Weeks with no sessions fall back to today's plan calendar.
+    recorded: dict[date, int] = {}
+    for s in sessions:
+        if s.plan_week is not None:
+            recorded[week_start(s.performed_on)] = s.plan_week
+
+    def plan_week_on(day: date) -> int:
+        start = week_start(day)
+        if start < this_week and start in recorded:
+            return recorded[start]
+        return plan_week(settings, day)
+
     def planned_on(day: date) -> bool:
-        week = plan_week(settings, day)
+        week = plan_week_on(day)
         return any(t.weekday == day.weekday() and runs_in_week(t, week) for t in scheduled)
 
     def planned_in_week(start: date) -> int:
         return sum(planned_on(start + timedelta(days=i)) for i in range(7))
 
-    this_week = _week_start(today)
     first_week = this_week - timedelta(weeks=WEEKS - 1)
     by_week: dict[date, list[WorkoutSession]] = defaultdict(list)
     by_day: dict[date, list[int]] = defaultdict(list)
     for s in sessions:
-        by_week[_week_start(s.performed_on)].append(s)
+        by_week[week_start(s.performed_on)].append(s)
         by_day[s.performed_on].append(s.id)
 
     weeks = []
@@ -90,7 +99,7 @@ def summary(
         def trained_days(week: date) -> int:
             return len({s.performed_on for s in by_week.get(week, [])})
 
-        earliest = _week_start(sessions[0].performed_on)
+        earliest = week_start(sessions[0].performed_on)
         week = this_week if planned_this_week and trained_days(this_week) >= planned_this_week \
             else this_week - timedelta(weeks=1)
         while week >= earliest:

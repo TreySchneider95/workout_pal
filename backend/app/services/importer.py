@@ -500,8 +500,12 @@ def _import_plan(
             report.templates_created += 1
         else:
             report.templates_updated += 1
+        if template.weeks:
+            # The CSV is a weekly plan: its workouts run every week.
+            report.warnings.append(f"'{name}' ran only in some plan weeks; it now runs every week")
+            template.weeks = None
 
-        # Free the weekday if another template occupies it in the same plan weeks.
+        # Free the weekday for it (it runs every week, so that day in every week).
         for other in schedule_conflicts(templates.values(), weekday, template.weeks, exclude=template):
             report.warnings.append(
                 f"'{other.name}' was scheduled on {WEEKDAYS[weekday]}; unscheduled to make room for '{name}'"

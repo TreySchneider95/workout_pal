@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { pictureFile, pictureFromData, readClipboardPicture } from "@/lib/pasteImage";
 
 const NOT_A_PICTURE = "There's no picture on the clipboard. In the AI app, press and hold the picture (or right-click it) and choose Copy.";
+const UNREADABLE = "That picture couldn't be used (it may be too big or in a format this browser can't open). Save it and use Upload file instead.";
 
 function pasteHint(): string {
   if (window.matchMedia?.("(pointer: coarse)").matches) return "Press and hold here, then tap Paste";
@@ -15,7 +16,7 @@ function pasteHint(): string {
 /**
  * "Paste picture": reads the clipboard directly where the browser allows it, otherwise opens a
  * box to paste into (works over plain http too). Renders a button plus, when open, a full-width
- * box (`col-span-full`, so it gets its own row inside a grid).
+ * box on its own row after the other buttons, in a grid or a wrapping flex row.
  */
 export function PastePicture({
   onPicture,
@@ -39,7 +40,7 @@ export function PastePicture({
   const use = async (blob: Blob | null) => {
     const file = blob ? await pictureFile(blob, name) : null;
     if (!file) {
-      toast.error(NOT_A_PICTURE);
+      toast.error(blob?.type.startsWith("image/") ? UNREADABLE : NOT_A_PICTURE);
       return;
     }
     setOpen(false);
@@ -60,7 +61,8 @@ export function PastePicture({
         <ClipboardPaste /> {label}
       </Button>
       {open && (
-        <div className="relative col-span-full">
+        // Its own full-width row after the buttons, in a grid (col-span-full) or a wrapping flex row (basis-full).
+        <div className="relative order-last col-span-full w-full basis-full">
           <div
             ref={box}
             contentEditable

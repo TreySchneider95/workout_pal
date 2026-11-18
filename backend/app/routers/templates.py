@@ -17,6 +17,7 @@ from app.services.plan import (
     normalize_weeks,
     program_week,
     schedule_conflicts,
+    schedule_lock,
     weeks_text,
 )
 from app.services.prescription import format_prescription
@@ -44,10 +45,12 @@ def _load(db: Session, profile: Profile, template_id: int) -> WorkoutTemplate:
     return template
 
 
-def _out(db: Session, profile: Profile, template: WorkoutTemplate, on_date: date | None = None) -> schemas.TemplateOut:
+def _out(db: Session, profile: Profile, template: WorkoutTemplate, on_date: date | None = None,
+         schedule_notes: list[str] | None = None) -> schemas.TemplateOut:
     db.refresh(template)
     week, ramp = _week(db, profile, on_date)
-    return template_out(template, week, ramp)
+    out = template_out(template, week, ramp)
+    return out.model_copy(update={"schedule_notes": schedule_notes}) if schedule_notes else out
 
 
 def _check_name(db: Session, profile: Profile, name: str, exclude_id: int | None = None) -> None:
@@ -84,19 +87,37 @@ def _others(db: Session, template: WorkoutTemplate) -> list[WorkoutTemplate]:
     )))
 
 
-def _assign_weekday(db: Session, template: WorkoutTemplate, weekday: int | None) -> None:
-    """Move a template to a weekday. Workouts already on that day in the same weeks swap into
-    the old slot (or become unscheduled when that slot is taken in their weeks)."""
+def _assign_weekday(db: Session, template: WorkoutTemplate, weekday: int | None, plan_weeks: int) -> list[str]:
+    """Move a template to a weekday and make room there. For each workout already on that day in
+    the same weeks, in order of preference:
+
+    1. it swaps into the old day, when that day is free in all of its weeks;
+    2. it keeps the day in the weeks the moved workout doesn't run in (e.g. an every-week Upper A
+       stays on Monday in weeks 1-2 when a week-3 deload takes Monday);
+    3. it becomes unscheduled.
+
+    Returns one sentence per workout that was changed, for the app to show."""
     if template.weekday == weekday:
-        return
+        return []
     old = template.weekday
     others = _others(db, template)
     template.weekday = weekday
+    every = set(range(1, plan_weeks + 1))
+    notes = []
     for occupant in schedule_conflicts(others, weekday, template.weeks):
-        occupant.weekday = None
         if old is not None and not schedule_conflicts(others + [template], old, occupant.weeks, exclude=occupant):
             occupant.weekday = old
+            notes.append(f"{occupant.name} moved to {WEEKDAYS[old]}.")
+            continue
+        remaining = (set(occupant.weeks or every) - set(template.weeks or every)) if plan_weeks > 1 else set()
+        if remaining:
+            occupant.weeks = normalize_weeks(remaining, plan_weeks)
+            notes.append(f"{occupant.name} now runs on {WEEKDAYS[weekday]} in {weeks_text(occupant.weeks).lower()} only.")
+        else:
+            occupant.weekday = None
+            notes.append(f"{occupant.name} is no longer scheduled (you can still start it any day).")
     db.flush()
+    return notes
 
 
 def _weeks(db: Session, profile: Profile, weeks: list[int] | None) -> list[int] | None:
@@ -123,6 +144,11 @@ def _set_weeks(db: Session, template: WorkoutTemplate, weeks: list[int] | None) 
 
 @router.post("", response_model=schemas.TemplateOut, status_code=status.HTTP_201_CREATED)
 def create_template(body: schemas.TemplateCreate, db: DB, profile: CurrentProfile) -> schemas.TemplateOut:
+    with schedule_lock:
+        return _create_template(body, db, profile)
+
+
+def _create_template(body: schemas.TemplateCreate, db: Session, profile: Profile) -> schemas.TemplateOut:
     _check_name(db, profile, body.name)
     template = WorkoutTemplate(profile_id=profile.id, name=body.name.strip(), notes=body.notes,
                                weeks=_weeks(db, profile, body.weeks))
@@ -139,13 +165,18 @@ def create_template(body: schemas.TemplateCreate, db: DB, profile: CurrentProfil
                 per_side=te.per_side, suggested_weight=te.suggested_weight,
                 default_rest_seconds=te.default_rest_seconds, notes=te.notes, skipped=te.skipped,
             ))
-    _assign_weekday(db, template, body.weekday)
+    notes = _assign_weekday(db, template, body.weekday, get_app_settings(db, profile.id).plan_weeks)
     db.commit()
-    return _out(db, profile, template)
+    return _out(db, profile, template, schedule_notes=notes)
 
 
 @router.patch("/{template_id}", response_model=schemas.TemplateOut)
 def update_template(template_id: int, body: schemas.TemplateUpdate, db: DB, profile: CurrentProfile) -> schemas.TemplateOut:
+    with schedule_lock:
+        return _update_template(template_id, body, db, profile)
+
+
+def _update_template(template_id: int, body: schemas.TemplateUpdate, db: Session, profile: Profile) -> schemas.TemplateOut:
     template = _load(db, profile, template_id)
     changes = body.model_dump(exclude_unset=True)
     if "name" in changes and changes["name"]:
@@ -155,14 +186,19 @@ def update_template(template_id: int, body: schemas.TemplateUpdate, db: DB, prof
         template.notes = changes["notes"]
     if "estimated_duration_minutes" in changes:
         template.estimated_duration_minutes = changes["estimated_duration_minutes"] or None
+    new_day = None if body.unschedule else changes.get("weekday")
+    moving = body.unschedule or (new_day is not None and new_day != template.weekday)
     if "weeks" in changes:
-        _set_weeks(db, template, _weeks(db, profile, changes["weeks"]))
-    if body.unschedule:
-        _assign_weekday(db, template, None)
-    elif "weekday" in changes and changes["weekday"] is not None:
-        _assign_weekday(db, template, changes["weekday"])
+        weeks = _weeks(db, profile, changes["weeks"])
+        if moving:
+            template.weeks = weeks  # checked against the new day below
+        else:
+            _set_weeks(db, template, weeks)
+    notes = []
+    if moving:
+        notes = _assign_weekday(db, template, new_day, get_app_settings(db, profile.id).plan_weeks)
     db.commit()
-    return _out(db, profile, template)
+    return _out(db, profile, template, schedule_notes=notes)
 
 
 @router.delete("/{template_id}", status_code=status.HTTP_204_NO_CONTENT)

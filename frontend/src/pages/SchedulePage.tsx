@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { CalendarCheck, CalendarPlus, ChevronRight, Coffee, Images, Plus, Sparkles } from "lucide-react";
 import * as React from "react";
 import { Link, useNavigate } from "react-router";
+import { toast } from "sonner";
 
 import { EmptyState, PageHeader } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -15,7 +16,7 @@ import { Field, Input, Select } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { api } from "@/lib/api";
 import { MAX_PLAN_WEEKS, WEEKDAYS, minutesText } from "@/lib/format";
-import { planLengthText, runsInWeek, startDateForWeek, weeksOverlap } from "@/lib/planWeeks";
+import { planLengthText, remainingWeeks, runsInWeek, startDateForWeek, weeksOverlap, weeksText } from "@/lib/planWeeks";
 import { queryClient } from "@/lib/queryClient";
 import type { Template } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -89,11 +90,21 @@ function NewWorkoutDialog({
       void queryClient.invalidateQueries({ queryKey: ["templates"] });
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       onOpenChange(false);
+      for (const note of t.schedule_notes ?? []) toast.info(note);
       navigate(`/schedule/${t.id}`);
     },
   });
   const onDay = (day: number) => templates.filter((t) => t.weekday === day && weeksOverlap(t.weeks, weeks));
   const occupied = weekday === "" ? [] : onDay(Number(weekday));
+  // Mirrors the server: a workout already there keeps the weeks this one doesn't use, or is unscheduled.
+  const makeRoom = occupied
+    .map((t) => {
+      const left = remainingWeeks(t.weeks, weeks, planWeeks);
+      return left === "none"
+        ? `${t.name} will be unscheduled to make room.`
+        : `${t.name} will stay on ${WEEKDAYS[Number(weekday)]} in ${weeksText(left)} only.`;
+    })
+    .join(" ");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -115,11 +126,7 @@ function NewWorkoutDialog({
           )}
           <Field
             label="Day"
-            hint={
-              occupied.length
-                ? `${occupied.map((t) => t.name).join(" and ")} ${occupied.length > 1 ? "are" : "is"} on ${WEEKDAYS[Number(weekday)]} in those weeks; unscheduled to make room.`
-                : undefined
-            }
+            hint={makeRoom || undefined}
           >
             <Select value={weekday} onChange={(e) => setWeekday(e.target.value)}>
               <option value="">Not scheduled (start it any day)</option>
@@ -150,7 +157,7 @@ function NewWorkoutDialog({
   );
 }
 
-function PlanLengthSelect({ templates, planWeeks }: { templates: Template[]; planWeeks: number }) {
+function PlanLengthSelect({ templates, planWeeks, currentWeek }: { templates: Template[]; planWeeks: number; currentWeek: number }) {
   const [pending, setPending] = React.useState<number | null>(null);
   const save = useMutation({
     mutationFn: (weeks: number) => api.updateSettings({ plan_weeks: weeks }),
@@ -160,8 +167,8 @@ function PlanLengthSelect({ templates, planWeeks }: { templates: Template[]; pla
     },
   });
   const choose = (weeks: number) => {
-    // Shortening the plan drops weeks; say what that does to workouts first.
-    if (templates.some((t) => t.weeks?.some((w) => w > weeks))) setPending(weeks);
+    // Shortening the plan drops weeks; say what that does to workouts (and to this week) first.
+    if (currentWeek > weeks || templates.some((t) => t.weeks?.some((w) => w > weeks))) setPending(weeks);
     else save.mutate(weeks);
   };
   const orphaned = pending === null ? [] : templates.filter((t) => t.weeks && t.weekday !== null && t.weeks.every((w) => w > pending));
@@ -180,7 +187,8 @@ function PlanLengthSelect({ templates, planWeeks }: { templates: Template[]; pla
         title={`Shorten to ${pending === 1 ? "one week" : `${pending} weeks`}?`}
         description={
           `Weeks after week ${pending} are dropped from every workout.` +
-          (orphaned.length ? ` ${orphaned.map((t) => t.name).join(", ")} only run${orphaned.length === 1 ? "s" : ""} in those weeks and will be unscheduled.` : "")
+          (orphaned.length ? ` ${orphaned.map((t) => t.name).join(", ")} only run${orphaned.length === 1 ? "s" : ""} in those weeks and will be unscheduled.` : "") +
+          (pending !== null && currentWeek > pending ? ` This week (week ${currentWeek}) becomes week 1.` : "")
         }
         confirmLabel="Shorten plan"
         destructive
@@ -209,7 +217,7 @@ export default function SchedulePage() {
   const missingPictures = new Set(list.flatMap((t) => t.exercises.filter((te) => !te.exercise.image_url).map((te) => te.exercise.id))).size;
 
   const makeCurrent = useMutation({
-    mutationFn: () => api.updateSettings({ program_start_date: startDateForWeek(week) }),
+    mutationFn: () => api.updateSettings({ plan_start_date: startDateForWeek(week) }),
     onSuccess: (s) => {
       queryClient.setQueryData(["settings"], s);
       for (const key of ["templates", "dashboard", "analytics"]) void queryClient.invalidateQueries({ queryKey: [key] });
@@ -262,7 +270,7 @@ export default function SchedulePage() {
           {list.length > 0 && (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">
-                <PlanLengthSelect templates={list} planWeeks={planWeeks} />
+                <PlanLengthSelect templates={list} planWeeks={planWeeks} currentWeek={currentWeek} />
                 <Button asChild size="sm" variant="ghost">
                   <Link to="/schedule/pictures">
                     <Images /> Exercise pictures

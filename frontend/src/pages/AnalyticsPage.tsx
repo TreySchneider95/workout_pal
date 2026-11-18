@@ -164,7 +164,11 @@ export default function AnalyticsPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Workouts per week</CardTitle>
-                <p className="text-sm text-muted-foreground">Plan: {s.planned_this_week} per week</p>
+                <p className="text-sm text-muted-foreground">
+                  {new Set(s.weeks.map((w) => w.planned)).size > 1
+                    ? `Plan: varies by week (${s.planned_this_week} this week)`
+                    : `Plan: ${s.planned_this_week} per week`}
+                </p>
               </CardHeader>
               <CardContent>
                 <BarTrend data={s.weeks.map((w) => ({ label: weekLabel(w.week_start), value: w.workouts, detail: `${minutesText(w.minutes)} total` }))} unit="workouts" />

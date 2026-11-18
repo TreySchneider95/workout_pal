@@ -161,7 +161,7 @@ class WorkoutTemplate(Base):
     # A day holds at most one workout in any plan week (checked in code, not by the database).
     weekday: Mapped[int | None] = mapped_column(Integer)
     # Plan weeks (1-based) this workout runs in; NULL = every week. See AppSettings.plan_weeks.
-    weeks: Mapped[list[int] | None] = mapped_column(JSON)
+    weeks: Mapped[list[int] | None] = mapped_column(JSON(none_as_null=True))
     # Manual override; otherwise estimated from the exercises.
     estimated_duration_minutes: Mapped[int | None] = mapped_column(Integer)
     notes: Mapped[str | None] = mapped_column(Text)
@@ -222,6 +222,8 @@ class WorkoutSession(Base):
     name: Mapped[str] = mapped_column(String(100))  # snapshot of template name
     performed_on: Mapped[date] = mapped_column(Date, index=True)  # local calendar date
     program_week: Mapped[int | None] = mapped_column(Integer)
+    # Plan week the session was done in, so stats keep past weeks right after a plan restart.
+    plan_week: Mapped[int | None] = mapped_column(Integer)
     started_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     status: Mapped[str] = mapped_column(String(20), default=SessionStatus.in_progress)
@@ -313,8 +315,10 @@ class AppSettings(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     profile_id: Mapped[int] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), unique=True)
-    # Week 1 starts here; weeks before `ramp_weeks` use each exercise's ramp_sets.
+    # When training started: the first `ramp_weeks` weeks from here use each exercise's ramp_sets.
     program_start_date: Mapped[date | None] = mapped_column(Date)
+    # The Monday plan week 1 starts on (restarting the plan moves only this). See services/plan.py.
+    plan_start_date: Mapped[date | None] = mapped_column(Date)
     ramp_weeks: Mapped[int] = mapped_column(Integer, default=2)
     # Length of the plan in weeks; it repeats from week 1 afterwards. 1 = same every week.
     plan_weeks: Mapped[int] = mapped_column(Integer, default=1)

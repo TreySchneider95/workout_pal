@@ -16,7 +16,7 @@ from app.models import (
     WorkoutTemplateExercise,
 )
 from app.services import progression
-from app.services.plan import get_app_settings, planned_sets, program_week
+from app.services.plan import get_app_settings, plan_start_for, plan_week, planned_sets, program_week
 from app.services.prescription import format_prescription
 
 
@@ -197,6 +197,8 @@ def start_session(
     settings = get_app_settings(db, profile_id)
     if settings.program_start_date is None:
         settings.program_start_date = performed_on
+    if settings.plan_start_date is None:
+        settings.plan_start_date = plan_start_for(performed_on)
     week = program_week(settings, performed_on)
 
     session = WorkoutSession(
@@ -205,6 +207,7 @@ def start_session(
         name=name or (template.name if template else "Custom workout"),
         performed_on=performed_on,
         program_week=week,
+        plan_week=plan_week(settings, performed_on),
     )
     if template is not None:
         order = 0

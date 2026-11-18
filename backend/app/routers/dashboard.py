@@ -16,7 +16,16 @@ from app.models import (
     WorkoutTemplateExercise,
 )
 from app.serializers import session_summary, template_choice, template_out
-from app.services.plan import WEEKDAYS, get_app_settings, plan_week, program_week, runs_in_week, set_plan_weeks
+from app.services.plan import (
+    WEEKDAYS,
+    get_app_settings,
+    plan_week,
+    program_week,
+    runs_in_week,
+    schedule_lock,
+    set_plan_weeks,
+    week_start,
+)
 
 router = APIRouter(prefix="/api", tags=["dashboard & settings"])
 
@@ -93,17 +102,26 @@ def get_settings_route(db: DB, profile: CurrentProfile) -> schemas.AppSettingsOu
 
 
 @router.patch("/settings", response_model=schemas.AppSettingsOut)
-def update_settings(body: schemas.AppSettingsUpdate, db: DB, profile: CurrentProfile) -> schemas.AppSettingsOut:
-    settings = get_app_settings(db, profile.id)
-    changes = body.model_dump(exclude_unset=True)
-    clear = changes.pop("clear_program_start_date", False)
-    plan_weeks = changes.pop("plan_weeks", None)
-    if plan_weeks is not None and plan_weeks != settings.plan_weeks:
-        set_plan_weeks(db, settings, plan_weeks)
-    for key, value in changes.items():
-        if value is not None:
-            setattr(settings, key, value)
-    if clear:
-        settings.program_start_date = None
-    db.commit()
+def update_settings(
+    body: schemas.AppSettingsUpdate,
+    db: DB,
+    profile: CurrentProfile,
+    on_date: Annotated[date | None, Query(alias="date", description="The device's local date")] = None,
+) -> schemas.AppSettingsOut:
+    with schedule_lock:
+        settings = get_app_settings(db, profile.id)
+        changes = body.model_dump(exclude_unset=True)
+        clear = changes.pop("clear_program_start_date", False)
+        plan_weeks = changes.pop("plan_weeks", None)
+        plan_start = changes.pop("plan_start_date", None)
+        if plan_weeks is not None and plan_weeks != settings.plan_weeks:
+            set_plan_weeks(db, settings, plan_weeks, on_date or date.today())
+        if plan_start is not None:  # after the length change, so an explicit start date wins
+            settings.plan_start_date = week_start(plan_start)
+        for key, value in changes.items():
+            if value is not None:
+                setattr(settings, key, value)
+        if clear:
+            settings.program_start_date = None
+        db.commit()
     return schemas.AppSettingsOut.model_validate(settings)

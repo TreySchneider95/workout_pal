@@ -11,7 +11,7 @@ from app.config import get_settings
 from app.deps import DB, CurrentProfile
 from app.models import PlanRevision, Profile
 from app.services import plan_exchange
-from app.services.plan import get_app_settings
+from app.services.plan import get_app_settings, schedule_lock
 from app.services.mailer import EmailError, send_email
 
 router = APIRouter(prefix="/api/plan-assistant", tags=["plan assistant"])
@@ -98,11 +98,13 @@ def preview(body: schemas.PlanDocumentIn, db: DB, profile: CurrentProfile) -> sc
 
 @router.post("/apply", response_model=schemas.PlanRevisionOut)
 def apply(body: schemas.PlanApplyIn, db: DB, profile: CurrentProfile, on_date: OnDate = None) -> schemas.PlanRevisionOut:
-    result, plan = _preview(db, profile, body.document)
-    if plan is None or not plan.ok:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, {"message": result.errors[0], "errors": result.errors})
-    revision = plan_exchange.apply_plan(db, profile.id, plan,
-                                        restart_on=(on_date or date.today()) if body.restart else None)
+    with schedule_lock:
+        result, plan = _preview(db, profile, body.document)
+        if plan is None or not plan.ok:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                                {"message": result.errors[0], "errors": result.errors})
+        revision = plan_exchange.apply_plan(db, profile.id, plan,
+                                            restart_on=(on_date or date.today()) if body.restart else None)
     return schemas.PlanRevisionOut.model_validate(revision).model_copy(update={"can_undo": True})
 
 
@@ -120,13 +122,15 @@ def list_revisions(db: DB, profile: CurrentProfile) -> list[schemas.PlanRevision
 
 @router.post("/revisions/{revision_id}/undo", response_model=schemas.PlanRevisionOut)
 def undo(revision_id: int, db: DB, profile: CurrentProfile) -> schemas.PlanRevisionOut:
-    latest = plan_exchange.latest_revision(db, profile.id)
-    if latest is None or latest.id != revision_id:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Only the most recent change can be undone")
-    try:
-        revision = plan_exchange.undo_revision(db, latest)
-    except plan_exchange.DocumentError as exc:
-        db.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT,
-                            {"message": "The previous plan can't be restored: " + exc.errors[0], "errors": exc.errors}) from exc
+    with schedule_lock:
+        latest = plan_exchange.latest_revision(db, profile.id)
+        if latest is None or latest.id != revision_id:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Only the most recent change can be undone")
+        try:
+            revision = plan_exchange.undo_revision(db, latest)
+        except plan_exchange.DocumentError as exc:
+            db.rollback()
+            raise HTTPException(status.HTTP_409_CONFLICT,
+                                {"message": "The previous plan can't be restored: " + exc.errors[0],
+                                 "errors": exc.errors}) from exc
     return schemas.PlanRevisionOut.model_validate(revision).model_copy(update={"can_undo": True})

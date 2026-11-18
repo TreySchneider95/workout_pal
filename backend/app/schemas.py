@@ -4,6 +4,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models import LoadType, Side, TrackingType
+from app.services.plan import MAX_PLAN_WEEKS
 
 Weight = Annotated[float, Field(ge=0, le=1000)]
 Reps = Annotated[int, Field(ge=0, le=500)]
@@ -13,9 +14,9 @@ Speed = Annotated[float, Field(ge=0, le=25)]
 SetCount = Annotated[int, Field(ge=1, le=20)]
 RestSeconds = Annotated[int, Field(ge=0, le=900)]
 PulleyRatio = Annotated[str, Field(pattern=r"^\d+:\d+$")]
-PlanWeek = Annotated[int, Field(ge=1, le=12)]
+PlanWeek = Annotated[int, Field(ge=1, le=MAX_PLAN_WEEKS)]
 # Plan weeks a workout runs in; null = every week.
-PlanWeeks = Annotated[list[PlanWeek], Field(min_length=1, max_length=12)]
+PlanWeeks = Annotated[list[PlanWeek], Field(min_length=1, max_length=MAX_PLAN_WEEKS)]
 
 
 class ORM(BaseModel):
@@ -206,6 +207,8 @@ class TemplateOut(BaseModel):
     notes: str | None
     exercise_count: int
     exercises: list[TemplateExerciseOut]
+    # After a create or move: what happened to other workouts on that day (e.g. "Lower A moved to Monday").
+    schedule_notes: list[str] = []
 
 
 class TemplateCreate(BaseModel):
@@ -455,6 +458,7 @@ class Dashboard(BaseModel):
 
 class AppSettingsOut(ORM):
     program_start_date: date | None
+    plan_start_date: date | None
     ramp_weeks: int
     plan_weeks: int
     rest_timer_auto_start: bool
@@ -465,6 +469,8 @@ class AppSettingsOut(ORM):
 class AppSettingsUpdate(BaseModel):
     program_start_date: date | None = None
     clear_program_start_date: bool = False
+    # Moved to that week's Monday. Changes which plan week it is; the ramp-in is unaffected.
+    plan_start_date: date | None = None
     ramp_weeks: Annotated[int, Field(ge=0, le=12)] | None = None
     plan_weeks: PlanWeek | None = None
     rest_timer_auto_start: bool | None = None

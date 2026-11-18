@@ -3,9 +3,15 @@
 A plan repeats every ``plan_weeks`` weeks (1 = the same workouts every week). Each workout
 runs in the plan weeks listed in ``WorkoutTemplate.weeks`` (``None`` = every week), so a
 6-week program can do different workouts, sets or reps from one week to the next.
-Program weeks run Monday to Sunday; week 1 is the week containing the program start date.
+Two dates drive the weeks, and they're kept apart on purpose:
+
+- ``program_start_date``: when the person started training. Program weeks count 7-day blocks
+  from it and decide the lighter ramp-in sets (``ramp_weeks``). Restarting a plan never moves it.
+- ``plan_start_date``: the Monday that plan week 1 starts on. Plan weeks run Monday to Sunday;
+  restarting a plan or picking "make week N this week" moves only this date.
 """
 
+import threading
 from collections.abc import Iterable
 from datetime import date, timedelta
 
@@ -16,6 +22,11 @@ from app.models import AppSettings, TrackingType, WorkoutTemplate, WorkoutTempla
 
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 MAX_PLAN_WEEKS = 12
+
+# Changes to the schedule (which workout runs on which day in which weeks) read the plan, then
+# write it. The database can't enforce "one workout per day per week", so those changes are
+# serialized here (the server runs as a single process).
+schedule_lock = threading.Lock()
 
 # Rough time per working set (seconds) used for the duration estimate.
 _WORK_SECONDS = 45
@@ -37,21 +48,30 @@ def week_start(day: date) -> date:
 
 
 def program_week(settings: AppSettings, on_date: date) -> int | None:
+    """Training week (7-day blocks from the program start date); drives the ramp-in sets."""
     if settings.program_start_date is None:
         return None
-    days = (week_start(on_date) - week_start(settings.program_start_date)).days
-    return max(1, days // 7 + 1)
+    return max(1, (on_date - settings.program_start_date).days // 7 + 1)
+
+
+def plan_start_for(day: date) -> date:
+    """The Monday plan week 1 starts on when a plan (re)starts on `day`: that week's Monday,
+    or the next Monday at the weekend, so a weekend restart doesn't use up week 1."""
+    monday = week_start(day)
+    return monday + timedelta(weeks=1) if day.weekday() >= 5 else monday
+
+
+def plan_start_for_week(on_date: date, week: int) -> date:
+    """Plan start date that makes `on_date`'s week plan week `week`."""
+    return week_start(on_date) - timedelta(weeks=week - 1)
 
 
 def plan_week(settings: AppSettings, on_date: date) -> int:
-    """Week of the repeating plan (1..plan_weeks). Before the program starts it's week 1."""
-    week = program_week(settings, on_date) or 1
-    return (week - 1) % max(1, settings.plan_weeks or 1) + 1
-
-
-def start_date_for_plan_week(today: date, week: int) -> date:
-    """Program start date that makes `today` fall in program week `week`."""
-    return week_start(today) - timedelta(weeks=week - 1)
+    """Week of the repeating plan (1..plan_weeks). Before the plan starts it's week 1."""
+    start = settings.plan_start_date
+    if start is None or on_date < start:
+        return 1
+    return (on_date - week_start(start)).days // 7 % max(1, settings.plan_weeks or 1) + 1
 
 
 def runs_in_week(template: WorkoutTemplate, week: int) -> bool:
@@ -98,9 +118,15 @@ def schedule_conflicts(
             if t is not exclude and t.weekday == weekday and weeks_overlap(t.weeks, weeks)]
 
 
-def set_plan_weeks(db: Session, settings: AppSettings, plan_weeks: int) -> None:
+def set_plan_weeks(db: Session, settings: AppSettings, plan_weeks: int, today: date) -> None:
     """Change the plan length. Weeks past the end are dropped from workouts; a workout left
-    with no weeks is unscheduled (it can still be started by hand)."""
+    with no weeks is unscheduled (it can still be started by hand).
+
+    `today` keeps its plan week (or goes back to week 1 when that week is dropped); otherwise the
+    new length would silently move today into a different week."""
+    if settings.plan_start_date is not None and today >= settings.plan_start_date:
+        current = plan_week(settings, today)
+        settings.plan_start_date = plan_start_for_week(today, current if current <= plan_weeks else 1)
     settings.plan_weeks = plan_weeks
     for t in db.scalars(select(WorkoutTemplate).where(WorkoutTemplate.profile_id == settings.profile_id)):
         if not t.weeks:

@@ -167,13 +167,16 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle>Program</CardTitle>
           <CardDescription>
-            Weeks run Monday to Sunday. The first weeks use fewer sets (from the plan's “weeks 1–2” column).
+            Your first weeks of training use fewer sets (from the plan's “weeks 1–2” column). Plan weeks run Monday to Sunday.
             {s.plan_weeks > 1 && ` Your ${s.plan_weeks}-week plan starts over after week ${s.plan_weeks}.`}
           </CardDescription>
         </CardHeader>
         <CardContent className="divide-y divide-border">
           <div className="pb-3">
-            <Field label="Program start date" hint="Week 1 is the week containing this date. Set automatically when you start your first workout; change the plan's current week from Plan.">
+            <Field
+              label="Training start date"
+              hint="The ramp-in weeks count from here. Set automatically when you start your first workout. Restarting or changing your plan doesn't move it; change the plan's current week from Plan."
+            >
               <div className="flex gap-2">
                 <Input
                   type="date"

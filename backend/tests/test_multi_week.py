@@ -48,9 +48,12 @@ def test_preview_shows_weeks(client: TestClient) -> None:
 
 
 def test_apply_schedules_by_week_and_repeats(client: TestClient) -> None:
+    client.patch("/api/settings", json={"program_start_date": "2026-09-07"})  # training for a while
     _apply(client, _three_week_doc(client))
-    assert client.get("/api/settings").json()["plan_weeks"] == 3
-    assert client.get("/api/settings").json()["program_start_date"] == MONDAY
+    settings = client.get("/api/settings").json()
+    assert (settings["plan_weeks"], settings["plan_start_date"]) == (3, MONDAY)
+    # Restarting the plan doesn't restart training (and with it the lighter ramp-in sets).
+    assert settings["program_start_date"] == "2026-09-07"
 
     expected = {
         "2026-10-19": (1, "Upper A"),
@@ -86,21 +89,21 @@ def test_exported_multi_week_plan_round_trips(client: TestClient) -> None:
 
 
 def test_undo_restores_weekly_plan_and_start_date(client: TestClient) -> None:
-    client.patch("/api/settings", json={"program_start_date": "2026-09-07"})
+    client.patch("/api/settings", json={"plan_start_date": "2026-09-07"})
     revision = _apply(client, _three_week_doc(client))
     client.post(f"/api/plan-assistant/revisions/{revision['id']}/undo")
     settings = client.get("/api/settings").json()
-    assert (settings["plan_weeks"], settings["program_start_date"]) == (1, "2026-09-07")
+    assert (settings["plan_weeks"], settings["plan_start_date"]) == (1, "2026-09-07")
     assert [t["name"] for t in client.get("/api/workout-templates").json()] == [
         "Upper A", "Lower A", "Upper B", "Cardio Mobility"]
     assert all(t["weeks"] is None for t in client.get("/api/workout-templates").json())
 
 
 def test_apply_without_restart_keeps_program_week(client: TestClient) -> None:
-    client.patch("/api/settings", json={"program_start_date": "2026-10-05"})
+    client.patch("/api/settings", json={"plan_start_date": "2026-10-05"})
     _apply(client, _three_week_doc(client), restart=False)
     d = _dashboard(client, MONDAY)
-    assert (d["program_week"], d["plan_week"]) == (3, 3)
+    assert d["plan_week"] == 3
     assert d["today"]["name"] == "Upper A · Deload"
 
 
@@ -164,7 +167,7 @@ def _templates(client: TestClient) -> dict[str, dict]:
 
 
 def test_week_specific_workouts_by_hand(client: TestClient) -> None:
-    client.patch("/api/settings", json={"plan_weeks": 2, "program_start_date": MONDAY})
+    client.patch("/api/settings", json={"plan_weeks": 2, "plan_start_date": MONDAY})
     t = _templates(client)
     # Upper A only in week 1; a new workout takes Monday in week 2.
     r = client.patch(f"/api/workout-templates/{t['Upper A']['id']}", json={"weeks": [1]})

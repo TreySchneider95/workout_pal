@@ -24,6 +24,7 @@ from app.models import (
     utcnow,
 )
 from app.serializers import session_exercise_out, session_out, session_summary
+from app.services.plan import get_app_settings, plan_week
 from app.services.sessions import add_set, append_exercise, renumber_sets, start_session
 
 router = APIRouter(prefix="/api/workout-sessions", tags=["workout sessions"])
@@ -112,6 +113,8 @@ def update_session(session_id: int, body: schemas.SessionUpdate, db: DB, profile
         if key in {"name", "performed_on", "started_at"} and value is None:
             continue
         setattr(session, key, value)
+    if changes.get("performed_on") is not None:
+        session.plan_week = plan_week(get_app_settings(db, profile.id), session.performed_on)
     if session.completed_at is not None and session.completed_at < session.started_at:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Finish time cannot be before start time")
     _touch(session)
